@@ -2,13 +2,14 @@
 
 namespace Lyre\Commerce\Models;
 
+use Lyre\Content\Concerns\HasInteractions;
 use Lyre\Facet\Concerns\HasFacet;
 use Lyre\File\Concerns\HasFile;
 use Lyre\Model;
 
 class Product extends Model
 {
-    use HasFacet, HasFile;
+    use HasFacet, HasFile, HasInteractions;
 
     const ID_COLUMN = 'slug';
 
@@ -16,7 +17,7 @@ class Product extends Model
         'metadata' => 'array',
     ];
 
-    protected $with = ['facetValues', 'files'];
+    protected $with = ['facetValues', 'files', 'interactions'];
 
     protected array $included = ['featured_image', 'lowest_price', 'lowest_compare_at_price', 'currency', 'default_variant'];
 
@@ -30,32 +31,7 @@ class Product extends Model
      */
     public function getLowestPriceAttribute()
     {
-        if (!$this->relationLoaded('variants')) {
-            $this->load('variants.userProductVariants.prices');
-        }
-
-        $lowestPrice = null;
-        foreach ($this->variants as $variant) {
-            if (!$variant->relationLoaded('userProductVariants')) {
-                $variant->load('userProductVariants.prices');
-            }
-
-            $userVariant = $variant->userProductVariants->first();
-            if ($userVariant) {
-                if (!$userVariant->relationLoaded('prices')) {
-                    $userVariant->load('prices');
-                }
-
-                $price = $userVariant->prices->first();
-                if ($price && $price->price !== null) {
-                    if ($lowestPrice === null || $price->price < $lowestPrice) {
-                        $lowestPrice = $price->price;
-                    }
-                }
-            }
-        }
-
-        return $lowestPrice;
+        return $this->getDefaultVariantAndLowestPrice()['price'];
     }
 
     /**
@@ -113,6 +89,14 @@ class Product extends Model
      */
     public function getDefaultVariantAttribute()
     {
+        return $this->getDefaultVariantAndLowestPrice()['variant'];
+    }
+
+    /**
+     * Get the default variant and lowest price (lowest priced, enabled variant)
+     */
+    public function getDefaultVariantAndLowestPrice()
+    {
         if (!$this->relationLoaded('variants')) {
             $this->load('variants.userProductVariants.prices');
         }
@@ -145,6 +129,9 @@ class Product extends Model
             }
         }
 
-        return $defaultVariant;
+        return [
+            'variant' => $defaultVariant,
+            'price' => $lowestPrice,
+        ];
     }
 }
