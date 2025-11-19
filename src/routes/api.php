@@ -4,7 +4,7 @@ use Illuminate\Support\Facades\Route;
 use Lyre\School\Http\Controllers;
 
 Route::prefix('api')
-    ->middleware(\Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class)
+    ->middleware(['api', \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class])
     ->group(function () {
         Route::apiResources([
             'assessments' => Controllers\AssessmentController::class,

@@ -27,6 +27,11 @@ class AssessmentRepository extends Repository implements AssessmentRepositoryInt
 
         $assessment = $this->model->create($assessmentData);
 
+        // Attach facet values if provided
+        if (isset($data['facet_value_ids']) && is_array($data['facet_value_ids']) && !empty($data['facet_value_ids'])) {
+            $assessment->attachFacetValues($data['facet_value_ids']);
+        }
+
         foreach ($data['tasks'] as $taskData) {
             $answers = $taskData['answers'] ?? [];
             unset($taskData['answers']);
@@ -50,6 +55,11 @@ class AssessmentRepository extends Repository implements AssessmentRepositoryInt
         $assessmentResource = parent::update($assessmentData, $slug, $thisModel);
 
         $assessment = $assessmentResource->resource;
+
+        // Attach facet values if provided
+        if (isset($data['facet_value_ids']) && is_array($data['facet_value_ids']) && !empty($data['facet_value_ids'])) {
+            $assessment->attachFacetValues($data['facet_value_ids']);
+        }
 
         $incomingTaskIds = [];
 

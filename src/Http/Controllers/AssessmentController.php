@@ -22,4 +22,3 @@ class AssessmentController extends Controller
         return $this->modelRepository->publish($assessment);
     }
 }
-

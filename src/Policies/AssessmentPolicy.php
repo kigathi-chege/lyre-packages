@@ -23,4 +23,3 @@ class AssessmentPolicy extends Policy
         return Response::allow();
     }
 }
-

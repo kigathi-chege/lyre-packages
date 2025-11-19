@@ -16,6 +16,8 @@ class StoreAssessmentRequest extends Request
         return [
             'name' => 'required|string',
             'description' => 'nullable|string',
+            'facet_value_ids' => 'nullable|array',
+            'facet_value_ids.*' => 'integer|exists:' . config('lyre.table_prefix') . 'facet_values,id',
 
             'tasks' => 'required|array',
             'tasks.*.name' => 'required|string',
