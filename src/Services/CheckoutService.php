@@ -6,6 +6,7 @@ use Lyre\Commerce\Repositories\Contracts\OrderRepositoryInterface;
 use Lyre\Commerce\Repositories\Contracts\ShippingAddressRepositoryInterface;
 use Lyre\Commerce\Repositories\Contracts\OrderItemRepositoryInterface;
 use Lyre\Billing\Services\Mpesa\Client as MpesaClient;
+use Lyre\Billing\Services\Paypal\Client as PaypalClient;
 use Illuminate\Support\Str;
 
 class CheckoutService
@@ -111,13 +112,44 @@ class CheckoutService
                 throw new \Exception("Order not found with ID/reference: {$orderId}");
             }
         }
-        $phone = $payload['phone'] ?? $payload['phone_number'] ?? null;
-        if (!$phone) {
-            throw new \Exception('Phone number required for Mpesa payment');
-        }
+
+        $paymentMethod = $payload['payment_method'] ?? 'mpesa';
         $amount = $order->total_amount;
-        $mpesa = app(MpesaClient::class);
-        $response = $mpesa->express(phoneNumber: $phone, amount: $amount);
+
+        // Ensure order has reference for transaction linking
+        if (!$order->reference) {
+            $order->reference = (string) Str::uuid();
+            $order->save();
+        }
+
+        // MPESA payment
+        if (strtolower($paymentMethod) === 'mpesa') {
+            $phone = $payload['phone'] ?? $payload['phone_number'] ?? null;
+            if (!$phone) {
+                throw new \Exception('Phone number required for Mpesa payment');
+            }
+            $mpesa = app(MpesaClient::class);
+            
+            // Include order reference for webhook linking
+            $response = $mpesa->express(
+                partyA: $payload['party_a'] ?? null,
+                phoneNumber: $phone,
+                amount: $amount,
+                paymentMethod: null,
+                orderReference: $order->reference
+            );
+        }
+        // PayPal payment
+        elseif (strtolower($paymentMethod) === 'paypal') {
+            $paypal = new \Lyre\Billing\Services\Paypal\Payment();
+            $response = $paypal->create($order, $payload);
+            
+            // PayPal requires user approval, so order stays as invoiced until capture
+            return $response;
+        } else {
+            throw new \Exception("Unsupported payment method: {$paymentMethod}");
+        }
+
         // Based on payment terms, determine fulfillment readiness
         $behavior = config('commerce.payment_terms.' . ($payload['payment_term_reference'] ?? 'prepaid'), 'require_payment_before_fulfillment');
         if (in_array($behavior, ['fulfillment_before_payment', 'partial_payment_then_fulfillment'])) {
@@ -125,7 +157,7 @@ class CheckoutService
             $order->save();
         }
         // For prepaid, keep as invoiced until webhook sets to paid
-        return $response;
+        return $response ?? ['status' => 'initiated'];
     }
 
     private function getPendingOrder()

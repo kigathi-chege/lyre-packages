@@ -20,7 +20,7 @@ class CartService
     public function add(array $payload)
     {
         // Support both product_variant_id (direct) and product_id (with default variant)
-        $variantId = (int) ($payload['product_variant_id'] ?? 0);
+        $variantId = ($payload['product_variant_id'] ?? 0);
         $productId = $payload['product_id'] ?? null;
         $quantity = max(1, (int) ($payload['quantity'] ?? 1));
 
@@ -31,7 +31,7 @@ class CartService
             $productModel = \Lyre\Commerce\Models\Product::where('slug', $productId)
                 ->orWhere('id', $productId)
                 ->first();
-            
+
             if ($productModel) {
                 $productModel->load('variants.userProductVariants.prices');
                 $defaultVariant = $productModel->default_variant;
@@ -51,28 +51,31 @@ class CartService
             throw new \InvalidArgumentException('product_variant_id or product_id is required');
         }
 
-        // Find variant by ID directly
-        $variantModel = $this->variants->getModel();
-        $variant = $variantModel::find($variantId);
-        
+        $variant = $this->variants->find($variantId)->resource;
+
         if (!$variant) {
             throw new \InvalidArgumentException("Product variant with ID {$variantId} not found");
         }
 
-        // Find UserProductVariant for the current user (merchant) and this variant
-        $userVariantModel = $this->userVariants->getModel();
-        $userVariant = $userVariantModel::query()
-            ->where('product_variant_id', $variant->id)
-            ->where('user_id', auth()->id())
-            ->first();
+        $tenant = tenant();
+        if ($tenant) {
+            // Find UserProductVariant for the current merchant and this variant
+            $userVariant = $this->userVariants->find([
+                'product_variant_id' => $variant->id,
+                'user_id' => $tenant->user_id
+            ])->resource;
 
-        $priceRow = null;
-        if ($userVariant) {
-            $priceRow = $userVariant->prices()->latest()->first();
+            $priceRow = null;
+            if ($userVariant) {
+                $priceRow = $userVariant->prices()->latest()->first();
+            }
+
+            $unitPrice = $priceRow?->price ?? 0;
+            $currency = $priceRow?->currency ?? config('commerce.default_currency', 'KES');
+        } else {
+            $unitPrice = $variant->price ?? 0;
+            $currency = $variant->currency ?? config('commerce.default_currency', 'KES');
         }
-
-        $unitPrice = $priceRow?->price ?? 0;
-        $currency = $priceRow?->currency ?? config('commerce.default_currency', 'KES');
 
         // Upsert item in order
         $existing = $order->items()->where('product_variant_id', $variant->id)->first();
@@ -107,19 +110,61 @@ class CartService
 
     public function remove(array $payload)
     {
-        $variantId = (int) ($payload['product_variant_id'] ?? 0);
-        $order = $this->getOrCreatePendingOrder();
-        $item = $order->items()->where('product_variant_id', $variantId)->first();
-        if ($item) {
-            $item->delete();
+        $variantId = $payload['product_variant_id'] ?? null;
+
+        if (! $variantId) {
+            throw new \InvalidArgumentException('product_variant_id is required');
         }
-        $order = $this->pricing->computeTotals($order->fresh('items', 'location'));
+
+        $variant = $this->variants->find($variantId)->resource;
+
+        $order = $this->getOrCreatePendingOrder();
+
+        $item = $order->items()
+            ->where('product_variant_id', $variant->id)
+            ->first();
+
+        if (! $item) {
+            return $order->load('items'); // nothing to remove
+        }
+
+        // If quantity is NOT provided → remove all (current behavior)
+        if (! array_key_exists('quantity', $payload)) {
+            $item->delete();
+        } else {
+            $quantity = (int) $payload['quantity'];
+
+            if ($quantity < 1) {
+                throw new \InvalidArgumentException('quantity must be a positive integer');
+            }
+
+            // If requested quantity >= existing quantity → remove item
+            if ($quantity >= $item->quantity) {
+                $item->delete();
+            } else {
+                // Reduce quantity
+                $item->quantity -= $quantity;
+                $item->subtotal = $item->quantity * $item->unit_price;
+                $item->save();
+            }
+        }
+
+        $order = $this->pricing->computeTotals(
+            $order->fresh('items', 'location')
+        );
+
         $order->save();
+
         return $order->load('items');
     }
 
+
     public function summary()
     {
+        if (!auth()->check()) {
+            throw new \RuntimeException('User must be authenticated to access cart');
+        }
+
         return $this->getOrCreatePendingOrder()->load('items', 'location', 'shippingAddress');
     }
 
@@ -146,22 +191,69 @@ class CartService
     private function getOrCreatePendingOrder()
     {
         $customerId = auth()->id();
+
+        if (!$customerId) {
+            throw new \RuntimeException('User must be authenticated to access cart');
+        }
+
         $orderModel = $this->orders->getModel();
-        $order = $orderModel::query()
-            ->where('customer_id', $customerId)
-            ->where('status', 'pending')
-            ->first();
+
+        $order = $this->orders
+            ->silent()
+            ->find([
+                'customer_id' => $customerId,
+                'status' => 'pending',
+            ])?->resource;
 
         if (!$order) {
             $order = $orderModel::create([
                 'customer_id' => $customerId,
                 'status' => 'pending',
-                'reference' => (string) \Illuminate\Support\Str::uuid(),
+                'reference' => self::generateOrderReference(),
                 'amount' => 0,
                 'total_amount' => 0,
             ]);
         }
 
         return $order;
+    }
+
+    private static function generateOrderReference($tenant = null, ?\DateTimeInterface $date = null): string
+    {
+        $tenant = $tenant ?? tenant();
+
+        $name = '';
+        if ($tenant) {
+            $name = $tenant->name ?? $tenant->title ?? $tenant->slug ?? '';
+        }
+
+        $trans = @iconv('UTF-8', 'ASCII//TRANSLIT', (string) $name) ?: (string) $name;
+        $words = preg_split('/\s+/', trim($trans));
+        $initials = '';
+
+        foreach ($words as $word) {
+            if ($word !== '') {
+                $initials .= mb_substr($word, 0, 1);
+            }
+        }
+
+        $initials = substr(strtoupper($initials . 'XX'), 0, 2);
+
+        $tenantId = (int) ($tenant->id ?? 0);
+        $hashChar = strtoupper(base_convert((string) ($tenantId % 36), 10, 36));
+
+        $tenantSegment = strtoupper($initials) . $hashChar;
+
+        $date = $date ? \Carbon\Carbon::instance($date) : now();
+        $dateSegment = $date->format('ymd');
+
+        $orderModel = orderRepository()->getModel();
+        $like = sprintf('%s-%s-%%', $tenantSegment, $dateSegment);
+
+        $count = $orderModel::query()->where('reference', 'like', $like)->count();
+
+        $sequence = str_pad((string) ($count + 1), 4, '0', STR_PAD_LEFT);
+
+        return sprintf('%s-%s-%s', $tenantSegment, $dateSegment, $sequence);
     }
 }

@@ -39,6 +39,14 @@ class Order extends Model
     {
         return $this->belongsTo(Coupon::class);
     }
+
+    public function transactions()
+    {
+        if (class_exists(\Lyre\Billing\Models\Transaction::class)) {
+            return $this->hasMany(\Lyre\Billing\Models\Transaction::class, 'order_reference', 'reference');
+        }
+        return null;
+    }
 }
 
 

@@ -46,5 +46,3 @@ class CartController extends Controller
         return __response(true, 'Coupon removed', $result, get_response_code('update-orders'));
     }
 }
-
-

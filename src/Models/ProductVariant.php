@@ -9,6 +9,8 @@ class ProductVariant extends Model
 {
     use HasFile;
 
+    const ID_COLUMN = 'slug';
+
     protected $fillable = [
         'product_id',
         'name',

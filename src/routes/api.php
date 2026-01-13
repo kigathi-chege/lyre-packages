@@ -7,7 +7,6 @@ Route::prefix(config('commerce.route_prefix', 'api'))
     ->middleware([
         'api',
         \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class,
-        // TODO: Kigathi - November 5 2025 - Move this to the Lyre Guest package
         \Lyre\Guest\Http\Middleware\EnsureGuestUser::class
     ])
     ->group(function () {

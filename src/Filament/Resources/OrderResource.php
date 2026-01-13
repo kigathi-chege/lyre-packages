@@ -88,15 +88,21 @@ class OrderResource extends Resource
                     'canceled' => 'Canceled',
                 ]),
         ])
-        ->actions([
-            Tables\Actions\EditAction::make(),
-            Tables\Actions\DeleteAction::make(),
-        ])
-        ->bulkActions([
-            Tables\Actions\BulkActionGroup::make([
-                Tables\Actions\DeleteBulkAction::make(),
-            ]),
-        ]);
+            ->actions([
+                Tables\Actions\EditAction::make(),
+                Tables\Actions\DeleteAction::make(),
+            ])
+            ->bulkActions([
+                Tables\Actions\BulkActionGroup::make([
+                    Tables\Actions\DeleteBulkAction::make(),
+                ]),
+            ])
+            ->striped()
+            ->deferLoading()
+            ->defaultSort(function () {
+                $prefix = config('lyre.table_prefix');
+                return "{$prefix}orders.created_at";
+            }, 'desc');
     }
 
     public static function getRelations(): array
@@ -115,4 +121,3 @@ class OrderResource extends Resource
         ];
     }
 }
-
