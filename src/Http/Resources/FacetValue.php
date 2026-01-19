@@ -13,17 +13,17 @@ class FacetValue extends Resource
         parent::__construct($model);
     }
 
-    public function toArray($request): array
-    {
-        $data = parent::toArray($request);
+    // public function toArray($request): array
+    // {
+    //     $data = parent::toArray($request);
 
-        // If facet is loaded, prevent it from loading its parent/children
-        // to avoid circular references
-        if (isset($data['facet']) && is_array($data['facet'])) {
-            unset($data['facet']['parent']);
-            unset($data['facet']['children']);
-        }
+    //     // If facet is loaded, prevent it from loading its parent/children
+    //     // to avoid circular references
+    //     if (isset($data['facet']) && is_array($data['facet'])) {
+    //         unset($data['facet']['parent']);
+    //         unset($data['facet']['children']);
+    //     }
 
-        return $data;
-    }
+    //     return $data;
+    // }
 }

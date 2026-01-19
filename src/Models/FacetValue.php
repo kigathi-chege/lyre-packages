@@ -6,10 +6,11 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Lyre\Model;
+use Lyre\Traits\HasModelRelationships;
 
 class FacetValue extends Model
 {
-    use HasFactory;
+    use HasFactory, HasModelRelationships;
 
     const ID_COLUMN = 'slug';
 
@@ -91,8 +92,20 @@ class FacetValue extends Model
     /**
      * Scope: Get root values (no parent)
      */
-    public function scopeRoots($query)
+    public function scopeRoots($query, ?array $scope = null)
     {
-        return $query->whereNull('parent_id');
+        $query = $query->whereNull('parent_id');
+
+        if (!empty($scope)) {
+            $relationFilters = $this->buildRelationFilters($scope);
+
+            if (!empty($relationFilters)) {
+                foreach ($relationFilters as $relation => $filter) {
+                    $query = filter_by_relationship($query, $relation, $filter['column'], $filter['value']);
+                }
+            }
+        }
+
+        return $query;
     }
 }

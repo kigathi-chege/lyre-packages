@@ -74,7 +74,9 @@ class Facet extends Model
      */
     public function scopeRoots($query)
     {
-        return $query->whereNull('parent_id');
+        $query = $query->whereNull('parent_id');
+
+        return $query;
     }
 
     public function getParentNameAttribute()

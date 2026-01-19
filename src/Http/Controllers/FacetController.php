@@ -6,6 +6,8 @@ use Lyre\Facet\Models\Facet;
 use Lyre\Facet\Repositories\Contracts\FacetRepositoryInterface;
 use Lyre\Controller;
 use Illuminate\Http\JsonResponse;
+use Lyre\Facet\Concerns\HasHierarchy;
+use Lyre\Facet\Http\Resources\Facet as ResourcesFacet;
 
 class FacetController extends Controller
 {
@@ -18,44 +20,17 @@ class FacetController extends Controller
     }
 
     /**
-     * Get the facet hierarchy for the current tenant
-     * Returns a tree structure of facets with their parent-child relationships
+     * Get the facet hierarchy
+     * If $facetId is provided, returns the hierarchy rooted at that facet.
+     * Otherwise, returns the full hierarchy.
      */
-    public function hierarchy(): JsonResponse
+    public function hierarchy(?string $facetId = null): JsonResponse
     {
-        // Get root facets (no parent) for current tenant
-        $rootFacets = Facet::roots()
-            ->with(['children' => function ($query) {
-                $query->orderBy('order');
-            }])
-            ->orderBy('order')
-            ->get();
-
-        // Build hierarchy tree recursively
-        $buildTree = function ($facets) use (&$buildTree) {
-            return $facets->map(function ($facet) use (&$buildTree) {
-                $data = [
-                    'id' => $facet->id,
-                    'name' => $facet->name,
-                    'slug' => $facet->slug,
-                    'description' => $facet->description,
-                    'parent_id' => $facet->parent_id,
-                    'order' => $facet->order,
-                    'depth' => $facet->ancestors()->count(),
-                ];
-
-                if ($facet->children->isNotEmpty()) {
-                    $data['children'] = $buildTree($facet->children);
-                }
-
-                return $data;
-            });
-        };
-
-        $hierarchy = $buildTree($rootFacets);
-
-        return response()->json([
-            'data' => $hierarchy,
-        ]);
+        return __response(
+            true,
+            "Get Hierarchy {$this->modelNamePlural}",
+            $this->modelRepository->hierarchy($facetId),
+            get_response_code("get-{$this->modelName}")
+        );
     }
 }

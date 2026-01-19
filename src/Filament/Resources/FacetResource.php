@@ -46,47 +46,47 @@ class FacetResource extends Resource
                     ->preload()
                     ->helperText('Select a parent facet to create a hierarchy. Leave empty for root facets.')
                     ->reactive()
-                    ->afterStateUpdated(function ($state, Forms\Set $set, $get) {
-                        // Additional reactive behaviors can be handled here if needed
-                    })
-                    ->getOptionLabelFromRecordUsing(fn($record) => $record->name)
-                    ->rules([
-                        function (string $attribute, $value, Closure $fail) {
-                            if (! $value) {
-                                return;
-                            }
+                    // ->afterStateUpdated(function ($state, Forms\Set $set, $get) {
+                    //     // Additional reactive behaviors can be handled here if needed
+                    // })
+                    ->getOptionLabelFromRecordUsing(fn($record) => $record->name),
+                // ->rules([
+                //     function (string $attribute, $value, Closure $fail) {
+                //         if (! $value) {
+                //             return;
+                //         }
 
-                            $recordId = request()?->route('record');
+                //         $recordId = request()?->route('record');
 
-                            if (! $recordId) {
-                                return;
-                            }
+                //         if (! $recordId) {
+                //             return;
+                //         }
 
-                            $currentFacet = Facet::find($recordId);
+                //         $currentFacet = Facet::find($recordId);
 
-                            if (! $currentFacet) {
-                                return;
-                            }
+                //         if (! $currentFacet) {
+                //             return;
+                //         }
 
-                            if ((int) $currentFacet->id === (int) $value) {
-                                $fail('A facet cannot be its own parent.');
+                //         if ((int) $currentFacet->id === (int) $value) {
+                //             $fail('A facet cannot be its own parent.');
 
-                                return;
-                            }
+                //             return;
+                //         }
 
-                            $descendants = method_exists($currentFacet, 'descendants')
-                                ? $currentFacet->descendants()
-                                : collect();
+                //         $descendants = method_exists($currentFacet, 'descendants')
+                //             ? $currentFacet->descendants()
+                //             : collect();
 
-                            if ($descendants instanceof \Illuminate\Database\Eloquent\Builder) {
-                                $descendants = $descendants->get();
-                            }
+                //         if ($descendants instanceof \Illuminate\Database\Eloquent\Builder) {
+                //             $descendants = $descendants->get();
+                //         }
 
-                            if ($descendants->contains('id', (int) $value)) {
-                                $fail('Cannot set a descendant facet as parent (circular reference).');
-                            }
-                        },
-                    ]),
+                //         if ($descendants->contains('id', (int) $value)) {
+                //             $fail('Cannot set a descendant facet as parent (circular reference).');
+                //         }
+                //     },
+                // ]),
                 Forms\Components\Select::make('access')
                     ->options([
                         'public' => 'Public',
