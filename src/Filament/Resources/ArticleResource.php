@@ -3,7 +3,10 @@
 namespace Lyre\Content\Filament\Resources;
 
 use Lyre\Facet\Filament\RelationManagers\FacetValuesRelationManager;
+use Lyre\File\Filament\RelationManagers\FilesRelationManager;
 use Lyre\Content\Filament\Resources\ArticleResource\Pages;
+use Lyre\Content\Filament\Actions\FormatArticleWithAIAction;
+use Lyre\Content\Filament\Actions\FormatSingleArticleWithAIAction;
 use Lyre\Content\Models\Article;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -58,22 +61,50 @@ class ArticleResource extends Resource
                     ->columnSpanFull(),
                 Forms\Components\Select::make('categories')
                     ->label('Categories')
-                    ->relationship(
-                        name: 'facetValues',
-                        titleAttribute: 'name',
-                        // modifyQueryUsing: fn(\Illuminate\Database\Eloquent\Builder $query) => $query->withTrashed(),
-                        // TODO: Kigathi - May 18 2025 - This works because Articles is the only entity we are currently using FacetValues on
-                        modifyQueryUsing: fn() => \Lyre\Facet\Models\FacetValue::query(),
-                    )
+                    ->options(function () {
+                        return \Lyre\Facet\Models\FacetValue::query()
+                            ->with('facet')
+                            ->get()
+                            ->mapWithKeys(function ($facetValue) {
+                                $label = $facetValue->facet
+                                    ? "{$facetValue->name} ({$facetValue->facet->name})"
+                                    : $facetValue->name;
+
+                                return [$facetValue->id => $label];
+                            })
+                            ->toArray();
+                    })
                     ->multiple()
                     ->preload()
                     ->searchable()
-                    ->getOptionLabelFromRecordUsing(fn($record) => "{$record->name} ({$record->facet_name})")
-                    ->saveRelationshipsUsing(static function ($component, $record, $state) {
-                        if (!empty($state)) {
+                    ->afterStateHydrated(function ($component, $state, $record) {
+                        if (! $record) {
+                            return;
+                        }
+
+                        $prefix = config('lyre.table_prefix');
+
+                        $component->state(
+                            $record->facetValues()
+                                ->pluck("{$prefix}facet_values.id")
+                                ->toArray()
+                        );
+                    })
+                    ->saveRelationshipsUsing(function ($component, $record, $state) {
+                        if (! empty($state)) {
                             $record->attachFacetValues($state);
                         }
                     })
+                    ->dehydrated(false)
+                    ->createOptionForm([
+                        Forms\Components\TextInput::make('name')
+                            ->required(),
+                        Forms\Components\Select::make('facet_id')
+                            ->relationship('facet', 'name')
+                            ->preload()
+                            ->searchable()
+                            ->required(),
+                    ])
             ]);
     }
 
@@ -89,6 +120,10 @@ class ArticleResource extends Resource
                 Tables\Columns\IconColumn::make('is_featured')
                     ->label('Featured')
                     ->boolean(),
+                Tables\Columns\IconColumn::make('is_ai_formatted')
+                    ->label('AI Formatted')
+                    ->boolean()
+                    ->toggleable(isToggledHiddenByDefault: true),
                 Tables\Columns\TextColumn::make('status')
                     ->badge()
                     ->colors([
@@ -103,13 +138,16 @@ class ArticleResource extends Resource
                 //
             ])
             ->actions([
+                FormatSingleArticleWithAIAction::make(),
                 Tables\Actions\EditAction::make(),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
+                    FormatArticleWithAIAction::make(),
                     Tables\Actions\DeleteBulkAction::make(),
                 ]),
             ])
+            ->headerActions([])
             ->striped()
             ->deferLoading()
             ->defaultSort('published_at', 'desc');
@@ -119,6 +157,7 @@ class ArticleResource extends Resource
     {
         return [
             FacetValuesRelationManager::class,
+            FilesRelationManager::class
         ];
     }
 
