@@ -22,10 +22,7 @@ class Section extends Resource
             $data = [];
 
             foreach ($result['data'] as $item) {
-                $repositoryInterface = ltrim($item->type::getRepositoryInterfaceConfig(), '\\');
-                $repository = app($repositoryInterface);
-                // NOTE: Kigathi - September 5 2025 - This does not yet implement filters
-                $data[\Illuminate\Support\Str::lower($item->name)] = $repository->unPaginate()->all();
+                $data[\Illuminate\Support\Str::lower($item->name)] = dataRepository()->resolve($item->resource);
             }
 
             $result['data'] = $data;

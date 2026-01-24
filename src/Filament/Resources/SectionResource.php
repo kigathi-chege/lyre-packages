@@ -52,6 +52,8 @@ class SectionResource extends Resource
 
     public static function table(Table $table): Table
     {
+        $prefix = config('lyre.table_prefix');
+
         return $table
             ->columns([
                 Tables\Columns\TextColumn::make('created_at')
@@ -74,8 +76,7 @@ class SectionResource extends Resource
             ])
             ->striped()
             ->deferLoading()
-            // NOTE: Kigathi - September 4 2025 - When we implement custom table names, this will need to be updated
-            ->defaultSort('sections.created_at', 'desc');
+            ->defaultSort("{$prefix}sections.created_at", 'desc');
     }
 
     public static function getRelations(): array
