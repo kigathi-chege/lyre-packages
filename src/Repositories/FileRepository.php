@@ -22,7 +22,7 @@ class FileRepository extends Repository implements FileRepositoryInterface
         return $this->resource ? new $this->resource($thisModel) : $thisModel;
     }
 
-    public function uploadFile($file, $name = null, $description = null, $originalName = null)
+    public function uploadFile($file, $name = null, $description = null, $originalName = null, $metadata = null)
     {
         $checksum = hash_file('md5', $file->getRealPath());
         $mimeType = $file->getMimeType();
@@ -66,7 +66,8 @@ class FileRepository extends Repository implements FileRepositoryInterface
                 'extension' => $extension,
                 'mimetype' => $mimeType,
                 'storage' => $storageDisk,
-                'description' => $description
+                'description' => $description,
+                'metadata' => $metadata
             ]
         );
 
