@@ -213,6 +213,32 @@ class ProcessArticleFormatting implements ShouldQueue
             default => 'Format the article to improve readability and engagement.',
         };
 
+        $imageSource = $this->config['image_source'] ?? 'dalle';
+
+        // Build JSON structure based on image source
+        $jsonStructure = '{
+    "title": "formatted title (or keep original if regenerate_title is false)",
+    "subtitle": "formatted subtitle (or keep original if regenerate_subtitle is false)",
+    "content": "the formatted HTML content",
+    "categories": ["category1", "category2"],';
+
+        if ($this->config['add_images'] ?? false) {
+            if ($imageSource === 'openverse') {
+                $jsonStructure .= '
+    "image_queries": ["search query 1", "search query 2"],
+    "image_positions": [500, 1000],
+    "featured_image_query": "search query for featured image"';
+            } else {
+                $jsonStructure .= '
+    "image_prompts": ["prompt for inline image 1", "prompt for inline image 2"],
+    "image_positions": [500, 1000],
+    "featured_image_prompt": "prompt for the featured image"';
+            }
+        }
+
+        $jsonStructure .= '
+}';
+
         $prompt = <<<PROMPT
 You are tasked with formatting an existing article. Here is the current content:
 
@@ -226,14 +252,7 @@ Formatting Instructions:
 {$styleInstructions}
 
 Please format this article and return a JSON response with the following structure:
-{
-    "title": "formatted title (or keep original if regenerate_title is false)",
-    "subtitle": "formatted subtitle (or keep original if regenerate_subtitle is false)",
-    "content": "the formatted HTML content",
-    "categories": ["category1", "category2"],
-    "image_prompts": ["prompt for inline image 1", "prompt for inline image 2"],
-    "featured_image_prompt": "prompt for the featured image"
-}
+{$jsonStructure}
 
 Additional requirements:
 PROMPT;
@@ -257,16 +276,36 @@ PROMPT;
         }
 
         if ($this->config['add_images'] ?? false) {
-            if ($this->config['add_inline_images'] ?? true) {
-                $prompt .= "\n- Provide 2-4 prompts for inline images that would enhance the article";
-                $prompt .= "\n- CRITICAL: Inline images must ONLY be placed at natural break points (between paragraphs, sections, headings, or complete sentences)";
-                $prompt .= "\n- Images must NEVER interrupt a sentence midway or appear in the middle of a sentence";
-            }
-            if ($this->config['add_featured_image'] ?? true) {
-                $prompt .= "\n- Provide a prompt for a featured image that represents the article";
+            $imageSource = $this->config['image_source'] ?? 'dalle';
+
+            if ($imageSource === 'openverse') {
+                // OpenVerse requires search queries
+                if ($this->config['add_inline_images'] ?? true) {
+                    $prompt .= "\n- Provide 2-4 search queries for finding real images from OpenVerse that would enhance the article";
+                    $prompt .= "\n- Queries should be 2-4 words describing the visual content needed (e.g., 'mountain landscape sunset', 'business team meeting')";
+                    $prompt .= "\n- Keep queries simple and descriptive, focusing on the visual subject matter";
+                    $prompt .= "\n- Include image_positions array with character positions in the content where each image should be inserted";
+                    $prompt .= "\n- CRITICAL: Image positions must ONLY be at natural break points (between paragraphs, sections, headings, or complete sentences)";
+                    $prompt .= "\n- Images must NEVER interrupt a sentence midway or appear in the middle of a sentence";
+                }
+                if ($this->config['add_featured_image'] ?? true) {
+                    $prompt .= "\n- Provide a search query for the featured image that represents the article's main topic";
+                }
+            } else {
+                // DALL-E requires descriptive prompts
+                if ($this->config['add_inline_images'] ?? true) {
+                    $prompt .= "\n- Provide 2-4 descriptive prompts for DALL-E to generate inline images that would enhance the article";
+                    $prompt .= "\n- Prompts should be detailed and specific, describing the desired visual style and content";
+                    $prompt .= "\n- Include image_positions array with character positions in the content where each image should be inserted";
+                    $prompt .= "\n- CRITICAL: Image positions must ONLY be at natural break points (between paragraphs, sections, headings, or complete sentences)";
+                    $prompt .= "\n- Images must NEVER interrupt a sentence midway or appear in the middle of a sentence";
+                }
+                if ($this->config['add_featured_image'] ?? true) {
+                    $prompt .= "\n- Provide a detailed prompt for DALL-E to generate a featured image that represents the article";
+                }
             }
         } else {
-            $prompt .= "\n- Do not include image prompts (leave arrays empty)";
+            $prompt .= "\n- Do not include image prompts or queries (leave arrays empty)";
         }
 
         return $prompt;

@@ -73,27 +73,39 @@ class ArticleAIFormComponents
     }
 
     /**
-     * Get image generation section
+     * Get image management section
      */
     public static function imageSection(array $defaults = []): Section
     {
-        return Section::make('Image Generation')
-            ->description('Add AI-generated images to your articles')
+        return Section::make('Image Management')
+            ->description('Add images to your articles from AI generation or real image databases')
             ->schema([
                 Toggle::make('add_images')
                     ->label('Add Images')
-                    ->helperText('Generate and insert relevant images using DALL-E')
+                    ->helperText('Add relevant images to articles')
                     ->default($defaults['add_images'] ?? false)
                     ->live(),
 
+                Radio::make('image_source')
+                    ->label('Image Source')
+                    ->options([
+                        'dalle' => 'DALL-E (AI Generated)',
+                        'openverse' => 'OpenVerse (Real Images)',
+                    ])
+                    ->default($defaults['image_source'] ?? 'dalle')
+                    ->helperText('Choose whether to generate images with AI or search for real images from OpenVerse')
+                    ->visible(fn($get) => $get('add_images'))
+                    ->live()
+                    ->columnSpanFull(),
+
                 Checkbox::make('add_featured_image')
-                    ->label('Generate Featured Image')
-                    ->helperText('Create a featured image for the article')
+                    ->label('Add Featured Image')
+                    ->helperText('Add a featured image for the article')
                     ->default($defaults['add_featured_image'] ?? true)
                     ->visible(fn($get) => $get('add_images')),
 
                 Checkbox::make('add_inline_images')
-                    ->label('Generate Inline Images')
+                    ->label('Add Inline Images')
                     ->helperText('Add relevant images at natural break points (between paragraphs, sections, or sentences - never mid-sentence)')
                     ->default($defaults['add_inline_images'] ?? true)
                     ->visible(fn($get) => $get('add_images')),

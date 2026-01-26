@@ -128,9 +128,20 @@ class UploadArticlesFromFolderAction extends Action
                             ->helperText('AI will suggest relevant categories for the article'),
 
                         Toggle::make('add_images')
-                            ->label('Generate and add images')
+                            ->label('Add images to articles')
                             ->default(false)
-                            ->helperText('AI will generate images using DALL-E and insert them into articles')
+                            ->helperText('AI will add images to articles from the selected source')
+                            ->live(),
+
+                        Radio::make('image_source')
+                            ->label('Image Source')
+                            ->options([
+                                'dalle' => 'DALL-E (AI Generated)',
+                                'openverse' => 'OpenVerse (Real Images)',
+                            ])
+                            ->default('dalle')
+                            ->helperText('Choose whether to generate images with AI or search for real images from OpenVerse')
+                            ->visible(fn($get) => $get('add_images'))
                             ->live(),
 
                         TextInput::make('max_images_per_article')
@@ -182,6 +193,7 @@ class UploadArticlesFromFolderAction extends Action
                         'generate_subtitle' => $data['generate_subtitle'] ?? false,
                         'generate_categories' => $data['generate_categories'] ?? true,
                         'add_images' => $data['add_images'] ?? false,
+                        'image_source' => $data['image_source'] ?? 'dalle',
                         'max_images' => $data['max_images_per_article'] ?? 3,
                         'published_at' => $data['publish_mode'] === 'now' ? now() : $data['published_at'],
                         'author_id' => $data['author_id'],

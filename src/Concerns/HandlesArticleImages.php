@@ -3,12 +3,13 @@ namespace Lyre\Content\Concerns;
 
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Str;
 use Lyre\Content\Models\Article;
+use Lyre\File\Concerns\UploadsFilesFromUrl;
 use Lyre\File\Models\File as FileModel;
 
 trait HandlesArticleImages
 {
+    use UploadsFilesFromUrl;
     /**
      * Generate image using DALL-E
      */
@@ -42,85 +43,351 @@ trait HandlesArticleImages
     }
 
     /**
-     * Upload image from URL to storage
+     * Search for image using OpenVerse
      */
-    protected function uploadImageFromUrl(string $url, string $name): FileModel
+    protected function searchOpenVerseImage(string $query): ?array
     {
-        Log::debug('📥 Downloading image from URL', ['name' => $name]);
+        try {
+            Log::info('🔍 Searching OpenVerse', [
+                'query' => $query,
+            ]);
 
-        $contents  = file_get_contents($url);
-        $extension = 'png';
-        $filename  = Str::slug($name) . '-' . time();
-        $path      = 'articles/images/' . date('Y/m/') . $filename . '.' . $extension;
+            $response = openverse()->searchImages([
+                'q' => $query,
+                'page_size' => 5,
+                'license_type' => 'commercial', // Prefer commercially usable images
+            ]);
 
-        Storage::disk('public')->put($path, $contents);
+            if ($response->failed()) {
+                Log::error('❌ OpenVerse API request failed', [
+                    'status' => $response->status(),
+                    'body' => $response->body(),
+                ]);
+                return null;
+            }
 
-        $fileModel = FileModel::create([
-            'name'          => $filename,
-            'original_name' => $name . '.' . $extension,
-            'path'          => $path,
-            'extension'     => $extension,
-            'mimetype'      => 'image/png',
-            'size'          => strlen($contents),
-            'storage'       => 'public',
-        ]);
+            $results = $response->json()['results'] ?? [];
 
-        $config = $this->getConfig();
-        if ($config['tenant_id'] ?? null) {
-            $fileModel->associateWithTenant($config['tenant_id']);
+            if (empty($results)) {
+                Log::warning('⚠️ No images found on OpenVerse', ['query' => $query]);
+                return null;
+            }
+
+            // Return the first result with all metadata
+            $image = $results[0];
+
+            Log::info('✅ OpenVerse image found', [
+                'id' => $image['id'] ?? null,
+                'title' => $image['title'] ?? null,
+                'provider' => $image['provider'] ?? null,
+            ]);
+
+            return [
+                'url' => $image['url'] ?? null,
+                'thumbnail' => $image['thumbnail'] ?? null,
+                'title' => $image['title'] ?? 'Untitled',
+                'creator' => $image['creator'] ?? null,
+                'creator_url' => $image['creator_url'] ?? null,
+                'license' => $image['license'] ?? null,
+                'license_version' => $image['license_version'] ?? null,
+                'license_url' => $image['license_url'] ?? null,
+                'provider' => $image['provider'] ?? null,
+                'source' => $image['source'] ?? null,
+            ];
+        } catch (\Exception $e) {
+            Log::error('❌ Failed to search OpenVerse', [
+                'query' => $query,
+                'error' => $e->getMessage(),
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * Download and save OpenVerse image with attribution
+     * Uses FileRepository for proper file processing
+     */
+    protected function downloadOpenVerseImage(array $imageData, string $name): ?FileModel
+    {
+        try {
+            // Prefer thumbnail for memory efficiency, fall back to full URL
+            // Thumbnails are usually 600x400px which is perfect for web articles
+            $imageUrl = $imageData['thumbnail'] ?? $imageData['url'] ?? null;
+            $fullUrl = $imageData['url'] ?? null;
+
+            if (!$imageUrl) {
+                Log::warning('⚠️ No image URL provided', ['image_data' => $imageData]);
+                return null;
+            }
+
+            Log::info('📥 Downloading OpenVerse image', [
+                'name' => $name,
+                'provider' => $imageData['provider'] ?? null,
+                'using_thumbnail' => $imageUrl === $imageData['thumbnail'],
+            ]);
+
+            // Prepare metadata for attribution
+            $metadata = [
+                'source' => 'openverse',
+                'title' => $imageData['title'] ?? null,
+                'creator' => $imageData['creator'] ?? null,
+                'creator_url' => $imageData['creator_url'] ?? null,
+                'license' => $imageData['license'] ?? null,
+                'license_version' => $imageData['license_version'] ?? null,
+                'license_url' => $imageData['license_url'] ?? null,
+                'provider' => $imageData['provider'] ?? null,
+                'source_url' => $imageData['source'] ?? null,
+                'original_url' => $fullUrl,
+            ];
+
+            // Upload using the reusable trait method with 3MB limit for images
+            $fileModel = $this->uploadFileFromUrl(
+                url: $imageUrl,
+                name: $name,
+                description: "OpenVerse image: {$imageData['title']}",
+                metadata: $metadata,
+                maxSizeBytes: 3145728 // 3MB max for images (balanced between quality and memory)
+            );
+
+            if (!$fileModel) {
+                Log::warning('⚠️ Failed to download image, possibly too large', [
+                    'url' => $imageUrl,
+                    'name' => $name,
+                ]);
+                return null;
+            }
+
+            // Associate with tenant
+            $config = $this->getConfig();
+            $this->associateFileWithTenant($fileModel, $config['tenant_id'] ?? null);
+
+            Log::info('✅ OpenVerse image saved with attribution', [
+                'file_id' => $fileModel->id,
+                'license' => $metadata['license'],
+            ]);
+
+            return $fileModel;
+        } catch (\Exception $e) {
+            Log::error('❌ Failed to download OpenVerse image', [
+                'name' => $name,
+                'error' => $e->getMessage(),
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * Upload DALL-E generated image from URL
+     * Uses FileRepository for proper file processing
+     */
+    protected function uploadDalleImage(string $imageUrl, string $name): ?FileModel
+    {
+        try {
+            // Metadata for DALL-E generated images
+            $metadata = [
+                'source' => 'dalle',
+                'generated_by' => 'dall-e-3',
+            ];
+
+            // Upload using the reusable trait method
+            $fileModel = $this->uploadFileFromUrl(
+                url: $imageUrl,
+                name: $name,
+                description: "DALL-E generated image",
+                metadata: $metadata
+            );
+
+            if (!$fileModel) {
+                return null;
+            }
+
+            // Associate with tenant
+            $config = $this->getConfig();
+            $this->associateFileWithTenant($fileModel, $config['tenant_id'] ?? null);
+
+            return $fileModel;
+        } catch (\Exception $e) {
+            Log::error('❌ Failed to upload DALL-E image', [
+                'name' => $name,
+                'error' => $e->getMessage(),
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * Find safe insertion point for image in HTML content
+     * Ensures images are placed between HTML elements, not inside them
+     */
+    protected function findSafeInsertionPoint(string $content, int $desiredPosition): int
+    {
+        // Check if content is HTML
+        $isHtml = preg_match('/<[a-z][\s\S]*>/i', $content);
+
+        if (!$isHtml) {
+            // For plain text, find the nearest paragraph or sentence break
+            return $this->findTextBreakPoint($content, $desiredPosition);
         }
 
-        Log::debug('✅ Image uploaded to storage', [
-            'file_id' => $fileModel->id,
-            'path'    => $path,
-            'size'    => number_format(strlen($contents)) . ' bytes',
+        // For HTML, find the nearest safe position between block elements
+        // Safe positions are after closing tags like </p>, </div>, </h1>, etc.
+        $blockElements = ['p', 'div', 'section', 'article', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'pre', 'ul', 'ol', 'li'];
+
+        // Build regex to match closing tags of block elements
+        $pattern = '/<\/(' . implode('|', $blockElements) . ')>/i';
+
+        // Find all closing tag positions
+        preg_match_all($pattern, $content, $matches, PREG_OFFSET_CAPTURE);
+
+        if (empty($matches[0])) {
+            // No block elements found, append at the end
+            return strlen($content);
+        }
+
+        $closestPosition = null;
+        $closestDistance = PHP_INT_MAX;
+
+        // Find the closest closing tag to desired position
+        foreach ($matches[0] as $match) {
+            $tagEnd = $match[1] + strlen($match[0]);
+            $distance = abs($tagEnd - $desiredPosition);
+
+            if ($distance < $closestDistance) {
+                $closestDistance = $distance;
+                $closestPosition = $tagEnd;
+            }
+        }
+
+        Log::debug('Found safe insertion point', [
+            'desired' => $desiredPosition,
+            'actual' => $closestPosition,
+            'distance' => $closestDistance,
         ]);
 
-        return $fileModel;
+        return $closestPosition ?? strlen($content);
+    }
+
+    /**
+     * Find break point in plain text (between sentences or paragraphs)
+     */
+    protected function findTextBreakPoint(string $content, int $desiredPosition): int
+    {
+        // Look for paragraph breaks (double newlines) or sentence endings near the desired position
+        $searchRadius = 200; // Search within 200 characters
+        $startPos = max(0, $desiredPosition - $searchRadius);
+        $endPos = min(strlen($content), $desiredPosition + $searchRadius);
+        $searchText = substr($content, $startPos, $endPos - $startPos);
+
+        // Find all paragraph breaks and sentence endings in the search area
+        $breakPoints = [];
+
+        // Paragraph breaks (double newlines)
+        if (preg_match_all('/\n\n/', $searchText, $matches, PREG_OFFSET_CAPTURE)) {
+            foreach ($matches[0] as $match) {
+                $breakPoints[] = $startPos + $match[1] + 2;
+            }
+        }
+
+        // Sentence endings (. ! ?) followed by space or newline
+        if (preg_match_all('/[.!?]\s+/', $searchText, $matches, PREG_OFFSET_CAPTURE)) {
+            foreach ($matches[0] as $match) {
+                $breakPoints[] = $startPos + $match[1] + strlen($match[0]);
+            }
+        }
+
+        if (empty($breakPoints)) {
+            // No break points found, use end of content
+            return strlen($content);
+        }
+
+        // Find closest break point to desired position
+        $closestPosition = $breakPoints[0];
+        $closestDistance = abs($closestPosition - $desiredPosition);
+
+        foreach ($breakPoints as $breakPoint) {
+            $distance = abs($breakPoint - $desiredPosition);
+            if ($distance < $closestDistance) {
+                $closestDistance = $distance;
+                $closestPosition = $breakPoint;
+            }
+        }
+
+        return $closestPosition;
     }
 
     /**
      * Add images to article content
      *
-     * Note: Image positions should be at natural break points (between paragraphs,
-     * sections, headings, or complete sentences). Images should never interrupt
-     * a sentence midway. The AI is instructed to provide appropriate positions.
+     * Images are intelligently placed at safe positions that respect HTML structure
+     * and sentence boundaries.
      */
     protected function addImagesToContent(array $articleData): array
     {
+        $config         = $this->getConfig();
+        $imageSource    = $config['image_source'] ?? 'dalle';
         $content        = $articleData['content'];
-        $imagePrompts   = $articleData['image_prompts'] ?? [];
         $imagePositions = $articleData['image_positions'] ?? [];
 
+        // Determine which field to use based on image source
+        if ($imageSource === 'openverse') {
+            $imageData = $articleData['image_queries'] ?? [];
+            $featuredImageData = $articleData['featured_image_query'] ?? null;
+        } else {
+            $imageData = $articleData['image_prompts'] ?? [];
+            $featuredImageData = $articleData['featured_image_prompt'] ?? null;
+        }
+
         // Generate and insert inline images (if enabled in config)
-        // Images are placed at positions suggested by AI, which should be at natural break points
         if ($this->shouldAddInlineImages()) {
             $offset = 0;
-            foreach ($imagePrompts as $index => $imagePrompt) {
-                Log::info("🎨 Generating inline image " . ($index + 1) . "/" . count($imagePrompts), [
-                    'prompt_preview' => substr($imagePrompt, 0, 50),
+            foreach ($imageData as $index => $imageDataItem) {
+                Log::info("🎨 Processing inline image " . ($index + 1) . "/" . count($imageData), [
+                    'source' => $imageSource,
+                    'data_preview' => substr($imageDataItem, 0, 50),
                 ]);
 
-                $imageUrl = $this->generateImage($imagePrompt);
+                $fileModel = null;
+                $altText = $imageDataItem;
 
-                if ($imageUrl) {
-                    // Upload image to storage
-                    $fileModel = $this->uploadImageFromUrl($imageUrl, "inline-image-{$index}");
+                if ($imageSource === 'openverse') {
+                    // Search OpenVerse for image
+                    $openVerseImage = $this->searchOpenVerseImage($imageDataItem);
 
-                    // Create HTML for image
-                    $imageUrl  = Storage::disk('public')->url($fileModel->path);
+                    if ($openVerseImage) {
+                        $fileModel = $this->downloadOpenVerseImage($openVerseImage, "inline-image-{$index}");
+                        $altText = $openVerseImage['title'] ?? $imageDataItem;
+                    }
+                } else {
+                    // Generate image with DALL-E
+                    $imageUrl = $this->generateImage($imageDataItem);
+
+                    if ($imageUrl) {
+                        $fileModel = $this->uploadDalleImage($imageUrl, "inline-image-{$index}");
+                    }
+                }
+
+                if ($fileModel) {
+                    // Create HTML for image using file link
+                    $imageUrl  = $fileModel->link ?? Storage::disk($fileModel->storage)->url($fileModel->path);
                     $imageHtml = sprintf(
-                        '<img src="%s" alt="%s" style="max-width: 100%%; height: auto;" />',
+                        "\n" . '<p><img src="%s" alt="%s" style="max-width: 100%%; height: auto;" /></p>' . "\n",
                         $imageUrl,
-                        htmlspecialchars($imagePrompt)
+                        htmlspecialchars($altText)
                     );
 
-                    // Insert at position
-                    $position = $imagePositions[$index] ?? null;
-                    if ($position !== null) {
-                        $position += $offset;
-                        $content   = substr_replace($content, $imageHtml, $position, 0);
-                        $offset   += strlen($imageHtml);
+                    // Find safe insertion position
+                    $desiredPosition = $imagePositions[$index] ?? null;
+                    if ($desiredPosition !== null) {
+                        $desiredPosition += $offset;
+                        $safePosition = $this->findSafeInsertionPoint($content, $desiredPosition);
+                        $content = substr_replace($content, $imageHtml, $safePosition, 0);
+                        $offset += strlen($imageHtml);
+
+                        Log::debug('Image inserted', [
+                            'desired_position' => $desiredPosition,
+                            'safe_position' => $safePosition,
+                            'adjustment' => $safePosition - $desiredPosition,
+                        ]);
                     } else {
                         // Append if no position specified
                         $content .= "\n" . $imageHtml;
@@ -128,6 +395,7 @@ trait HandlesArticleImages
 
                     Log::info('✅ Inline image added', [
                         'index'   => $index + 1,
+                        'source'  => $imageSource,
                         'file_id' => $fileModel->id,
                     ]);
                 }
@@ -137,19 +405,36 @@ trait HandlesArticleImages
         $articleData['content'] = $content;
 
         // Generate featured image (if enabled in config)
-        if ($this->shouldAddFeaturedImage() && ! empty($articleData['featured_image_prompt'])) {
-            Log::info('🎨 Generating featured image', [
-                'prompt_preview' => substr($articleData['featured_image_prompt'], 0, 50),
+        if ($this->shouldAddFeaturedImage() && ! empty($featuredImageData)) {
+            Log::info('🎨 Processing featured image', [
+                'source' => $imageSource,
+                'data_preview' => substr($featuredImageData, 0, 50),
             ]);
 
-            $imageUrl = $this->generateImage($articleData['featured_image_prompt']);
+            $fileModel = null;
 
-            if ($imageUrl) {
-                $fileModel                         = $this->uploadImageFromUrl($imageUrl, 'featured-image');
+            if ($imageSource === 'openverse') {
+                // Search OpenVerse for featured image
+                $openVerseImage = $this->searchOpenVerseImage($featuredImageData);
+
+                if ($openVerseImage) {
+                    $fileModel = $this->downloadOpenVerseImage($openVerseImage, 'featured-image');
+                }
+            } else {
+                // Generate featured image with DALL-E
+                $imageUrl = $this->generateImage($featuredImageData);
+
+                if ($imageUrl) {
+                    $fileModel = $this->uploadDalleImage($imageUrl, 'featured-image');
+                }
+            }
+
+            if ($fileModel) {
                 $articleData['featured_image']     = $fileModel;
-                $articleData['featured_image_url'] = $imageUrl;
+                $articleData['featured_image_url'] = $fileModel->link ?? Storage::disk($fileModel->storage)->url($fileModel->path);
 
-                Log::info('✅ Featured image generated', [
+                Log::info('✅ Featured image processed', [
+                    'source'  => $imageSource,
                     'file_id' => $fileModel->id,
                 ]);
             }

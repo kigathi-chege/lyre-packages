@@ -51,6 +51,7 @@ class FormatSingleArticleWithAIAction extends Action
                     'regenerate_subtitle' => $data['regenerate_subtitle'] ?? false,
                     'update_categories' => $data['update_categories'] ?? true,
                     'add_images' => $data['add_images'] ?? false,
+                    'image_source' => $data['image_source'] ?? 'dalle',
                     'add_featured_image' => $data['add_featured_image'] ?? true,
                     'add_inline_images' => $data['add_inline_images'] ?? true,
                 ];

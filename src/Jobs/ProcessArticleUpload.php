@@ -49,10 +49,16 @@ class ProcessArticleUpload implements ShouldQueue
      */
     public function handle(): void
     {
+        // Increase memory limit for image processing
+        // Image resizing can consume significant memory
+        $originalLimit = ini_get('memory_limit');
+        ini_set('memory_limit', '256M');
+
         Log::info('🚀 Article Upload Job Started', [
             'job_id' => $this->job->getJobId(),
             'files_count' => count($this->uploadedFiles),
             'user_id' => $this->userId,
+            'memory_limit' => $originalLimit,
         ]);
 
         $stats = null;

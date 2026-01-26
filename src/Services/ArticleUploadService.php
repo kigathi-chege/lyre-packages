@@ -569,8 +569,16 @@ class ArticleUploadService
         }
 
         if ($this->config['add_images'] ?? false) {
-            $prompt .= '  "image_prompts": ["Description for image 1", "Description for image 2"],' . "\n";
-            $prompt .= '  "featured_image_prompt": "Description for the featured image",' . "\n";
+            $imageSource = $this->config['image_source'] ?? 'dalle';
+
+            if ($imageSource === 'openverse') {
+                $prompt .= '  "image_queries": ["search query 1", "search query 2"],' . "\n";
+                $prompt .= '  "featured_image_query": "search query for featured image",' . "\n";
+            } else {
+                $prompt .= '  "image_prompts": ["Description for image 1", "Description for image 2"],' . "\n";
+                $prompt .= '  "featured_image_prompt": "Description for the featured image",' . "\n";
+            }
+
             $prompt .= '  "image_positions": [150, 450] // Approximate character positions where images should be inserted' . "\n";
         }
 
@@ -584,7 +592,15 @@ class ArticleUploadService
         }
 
         if ($this->config['add_images'] ?? false) {
-            $prompt .= "For images: Suggest specific, descriptive prompts for DALL-E to generate relevant images. ";
+            $imageSource = $this->config['image_source'] ?? 'dalle';
+
+            if ($imageSource === 'openverse') {
+                $prompt .= "For images: Suggest specific, concise search queries to find relevant images on OpenVerse (a database of openly licensed images). ";
+                $prompt .= "Queries should be 2-4 words describing the visual content needed (e.g., 'mountain landscape sunset', 'business team meeting'). ";
+            } else {
+                $prompt .= "For images: Suggest specific, descriptive prompts for DALL-E to generate relevant images. ";
+            }
+
             $prompt .= "IMPORTANT: Images must ONLY be placed at natural break points in the content. ";
             $prompt .= "Valid positions are: between paragraphs, between sections, between a heading and body text, or between two complete sentences. ";
             $prompt .= "Images must NEVER interrupt a sentence midway or appear in the middle of a sentence. ";
