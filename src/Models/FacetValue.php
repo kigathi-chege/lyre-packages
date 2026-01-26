@@ -1,5 +1,4 @@
 <?php
-
 namespace Lyre\Facet\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -49,7 +48,7 @@ class FacetValue extends Model
     public function ancestors()
     {
         $ancestors = collect();
-        $current = $this->parent;
+        $current   = $this->parent;
 
         while ($current) {
             $ancestors->push($current);
@@ -76,7 +75,7 @@ class FacetValue extends Model
 
     public function getFacetNameAttribute()
     {
-        return $this->facet->name;
+        return $this->facet?->name;
     }
 
     /**
@@ -96,10 +95,10 @@ class FacetValue extends Model
     {
         $query = $query->whereNull('parent_id');
 
-        if (!empty($scope)) {
+        if (! empty($scope)) {
             $relationFilters = $this->buildRelationFilters($scope);
 
-            if (!empty($relationFilters)) {
+            if (! empty($relationFilters)) {
                 foreach ($relationFilters as $relation => $filter) {
                     $query = filter_by_relationship($query, $relation, $filter['column'], $filter['value']);
                 }
