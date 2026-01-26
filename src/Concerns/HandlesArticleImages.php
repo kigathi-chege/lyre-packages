@@ -1,5 +1,4 @@
 <?php
-
 namespace Lyre\Content\Concerns;
 
 use Illuminate\Support\Facades\Log;
@@ -21,22 +20,22 @@ trait HandlesArticleImages
             ]);
 
             $response = openai()->request('post', 'images/generations', [
-                'model' => 'dall-e-3',
-                'prompt' => $prompt,
-                'n' => 1,
-                'size' => '1024x1024',
+                'model'   => 'dall-e-3',
+                'prompt'  => $prompt,
+                'n'       => 1,
+                'size'    => '1024x1024',
                 'quality' => 'standard',
             ]);
 
             $imageUrl = $response['data'][0]['url'] ?? null;
 
-            Log::info('✅ DALL-E image generated', ['has_url' => !empty($imageUrl)]);
+            Log::info('✅ DALL-E image generated', ['has_url' => ! empty($imageUrl)]);
 
             return $imageUrl;
         } catch (\Exception $e) {
             Log::error('❌ Failed to generate image', [
                 'prompt' => substr($prompt, 0, 100),
-                'error' => $e->getMessage(),
+                'error'  => $e->getMessage(),
             ]);
             return null;
         }
@@ -49,27 +48,32 @@ trait HandlesArticleImages
     {
         Log::debug('📥 Downloading image from URL', ['name' => $name]);
 
-        $contents = file_get_contents($url);
+        $contents  = file_get_contents($url);
         $extension = 'png';
-        $filename = Str::slug($name) . '-' . time();
-        $path = 'articles/images/' . date('Y/m/') . $filename . '.' . $extension;
+        $filename  = Str::slug($name) . '-' . time();
+        $path      = 'articles/images/' . date('Y/m/') . $filename . '.' . $extension;
 
         Storage::disk('public')->put($path, $contents);
 
         $fileModel = FileModel::create([
-            'name' => $filename,
+            'name'          => $filename,
             'original_name' => $name . '.' . $extension,
-            'path' => $path,
-            'extension' => $extension,
-            'mimetype' => 'image/png',
-            'size' => strlen($contents),
-            'storage' => 'public',
+            'path'          => $path,
+            'extension'     => $extension,
+            'mimetype'      => 'image/png',
+            'size'          => strlen($contents),
+            'storage'       => 'public',
         ]);
+
+        $config = $this->getConfig();
+        if ($config['tenant_id'] ?? null) {
+            $fileModel->associateWithTenant($config['tenant_id']);
+        }
 
         Log::debug('✅ Image uploaded to storage', [
             'file_id' => $fileModel->id,
-            'path' => $path,
-            'size' => number_format(strlen($contents)) . ' bytes',
+            'path'    => $path,
+            'size'    => number_format(strlen($contents)) . ' bytes',
         ]);
 
         return $fileModel;
@@ -84,8 +88,8 @@ trait HandlesArticleImages
      */
     protected function addImagesToContent(array $articleData): array
     {
-        $content = $articleData['content'];
-        $imagePrompts = $articleData['image_prompts'] ?? [];
+        $content        = $articleData['content'];
+        $imagePrompts   = $articleData['image_prompts'] ?? [];
         $imagePositions = $articleData['image_positions'] ?? [];
 
         // Generate and insert inline images (if enabled in config)
@@ -104,7 +108,7 @@ trait HandlesArticleImages
                     $fileModel = $this->uploadImageFromUrl($imageUrl, "inline-image-{$index}");
 
                     // Create HTML for image
-                    $imageUrl = Storage::disk('public')->url($fileModel->path);
+                    $imageUrl  = Storage::disk('public')->url($fileModel->path);
                     $imageHtml = sprintf(
                         '<img src="%s" alt="%s" style="max-width: 100%%; height: auto;" />',
                         $imageUrl,
@@ -115,15 +119,15 @@ trait HandlesArticleImages
                     $position = $imagePositions[$index] ?? null;
                     if ($position !== null) {
                         $position += $offset;
-                        $content = substr_replace($content, $imageHtml, $position, 0);
-                        $offset += strlen($imageHtml);
+                        $content   = substr_replace($content, $imageHtml, $position, 0);
+                        $offset   += strlen($imageHtml);
                     } else {
                         // Append if no position specified
                         $content .= "\n" . $imageHtml;
                     }
 
                     Log::info('✅ Inline image added', [
-                        'index' => $index + 1,
+                        'index'   => $index + 1,
                         'file_id' => $fileModel->id,
                     ]);
                 }
@@ -133,7 +137,7 @@ trait HandlesArticleImages
         $articleData['content'] = $content;
 
         // Generate featured image (if enabled in config)
-        if ($this->shouldAddFeaturedImage() && !empty($articleData['featured_image_prompt'])) {
+        if ($this->shouldAddFeaturedImage() && ! empty($articleData['featured_image_prompt'])) {
             Log::info('🎨 Generating featured image', [
                 'prompt_preview' => substr($articleData['featured_image_prompt'], 0, 50),
             ]);
@@ -141,8 +145,8 @@ trait HandlesArticleImages
             $imageUrl = $this->generateImage($articleData['featured_image_prompt']);
 
             if ($imageUrl) {
-                $fileModel = $this->uploadImageFromUrl($imageUrl, 'featured-image');
-                $articleData['featured_image'] = $fileModel;
+                $fileModel                         = $this->uploadImageFromUrl($imageUrl, 'featured-image');
+                $articleData['featured_image']     = $fileModel;
                 $articleData['featured_image_url'] = $imageUrl;
 
                 Log::info('✅ Featured image generated', [
@@ -170,18 +174,23 @@ trait HandlesArticleImages
             }
 
             $filename = 'featured-' . $article->slug . '-' . time() . '.png';
-            $path = 'articles/' . date('Y/m') . '/' . $filename;
+            $path     = 'articles/' . date('Y/m') . '/' . $filename;
 
             Storage::disk('public')->put($path, $imageContents);
 
             $file = FileModel::create([
-                'name' => $filename,
-                'path' => $path,
-                'disk' => 'public',
+                'name'      => $filename,
+                'path'      => $path,
+                'disk'      => 'public',
                 'mime_type' => 'image/png',
-                'size' => strlen($imageContents),
-                'status' => 'published',
+                'size'      => strlen($imageContents),
+                'status'    => 'published',
             ]);
+
+            $config = $this->getConfig();
+            if ($config['tenant_id'] ?? null) {
+                $file->associateWithTenant($config['tenant_id']);
+            }
 
             // Attach to article (single file, so we detach existing first)
             $article->files()->detach();
@@ -189,12 +198,12 @@ trait HandlesArticleImages
 
             Log::info('✅ Featured image attached', [
                 'article_id' => $article->id,
-                'file_id' => $file->id,
+                'file_id'    => $file->id,
             ]);
         } catch (\Exception $e) {
             Log::error('❌ Failed to attach featured image', [
                 'article_id' => $article->id,
-                'error' => $e->getMessage(),
+                'error'      => $e->getMessage(),
             ]);
         }
     }

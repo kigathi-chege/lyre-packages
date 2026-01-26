@@ -1,5 +1,4 @@
 <?php
-
 namespace Lyre\Content\Concerns;
 
 use Illuminate\Support\Facades\Log;
@@ -12,7 +11,7 @@ trait ManagesArticleData
     /**
      * Attach categories to article
      */
-    protected function attachCategories(Article $article, array $categoryNames): void
+    protected function attachCategories(Article $article, array $categoryNames, ?int $tenantId = null): void
     {
         $categoryFacet = Facet::firstOrCreate(['name' => 'Blog Category']);
         $facetValueIds = [];
@@ -25,12 +24,17 @@ trait ManagesArticleData
 
             $facetValue = FacetValue::firstOrCreate([
                 'facet_id' => $categoryFacet->id,
-                'name' => $categoryName,
+                'name'     => $categoryName,
             ]);
+
+            if ($tenantId) {
+                $facetValue->associateWithTenant($tenantId);
+            }
+
             $facetValueIds[] = $facetValue->id;
         }
 
-        if (!empty($facetValueIds) && method_exists($article, 'attachFacetValues')) {
+        if (! empty($facetValueIds) && method_exists($article, 'attachFacetValues')) {
             $article->attachFacetValues($facetValueIds);
         }
     }
@@ -47,7 +51,7 @@ trait ManagesArticleData
 
         $categoryFacet = Facet::where('name', 'Blog Category')->first();
 
-        if (!$categoryFacet) {
+        if (! $categoryFacet) {
             $categoryFacet = Facet::firstOrCreate(['name' => 'Blog Category']);
         }
 
@@ -63,7 +67,7 @@ trait ManagesArticleData
         $article->facetValues()->sync($facetValueIds);
 
         Log::debug('✅ Categories updated', [
-            'article_id' => $article->id,
+            'article_id'     => $article->id,
             'category_count' => count($facetValueIds),
         ]);
     }

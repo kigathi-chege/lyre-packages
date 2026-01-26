@@ -185,6 +185,7 @@ class UploadArticlesFromFolderAction extends Action
                         'max_images' => $data['max_images_per_article'] ?? 3,
                         'published_at' => $data['publish_mode'] === 'now' ? now() : $data['published_at'],
                         'author_id' => $data['author_id'],
+                        'tenant_id' => tenant()?->id,
                     ];
 
                     // Get uploaded files

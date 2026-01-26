@@ -78,8 +78,10 @@ class InteractionResource extends Resource
 
                                 shuffle($availableColors);
 
+                                $prefix = config('lyre.table_prefix');
+
                                 // Retrieve roles from database
-                                $dbInteractionTypes = \Illuminate\Support\Facades\DB::table('interaction_types')->pluck('name')->toArray();
+                                $dbInteractionTypes = \Illuminate\Support\Facades\DB::table("{$prefix}interaction_types")->pluck('name')->toArray();
 
                                 $roles = collect($dbInteractionTypes)->mapWithKeys(function ($role, $index) use ($availableColors) {
                                     return [$role => $availableColors[$index % count($availableColors)]];
