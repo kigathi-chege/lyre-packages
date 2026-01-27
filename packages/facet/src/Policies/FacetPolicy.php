@@ -1,0 +1,26 @@
+<?php
+
+namespace Lyre\Facet\Policies;
+
+use Lyre\Facet\Models\Facet;
+use App\Models\User;
+use Lyre\Policy;
+use Illuminate\Auth\Access\Response;
+
+class FacetPolicy extends Policy
+{
+    public function __construct(Facet $model)
+    {
+        parent::__construct($model);
+    }
+
+    public function viewAny(?User $user): Response
+    {
+        return Response::allow();
+    }
+
+    public function view(?User $user, $model): Response
+    {
+        return Response::allow();
+    }
+}
