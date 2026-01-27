@@ -35,7 +35,14 @@ class FileRepository extends Repository implements FileRepositoryInterface
         $baseName = $name ?? get_file_name_without_extension($file);
         $extension = get_file_extension($file);
         $storageDisk = config('filesystems.default');
-        $directory = "uploads/{$mimeType}";
+
+        $directoryPrefix = '';
+
+        if ($storageDisk == 's3' && config('filesystems.disks.s3.folder')) {
+            $directoryPrefix = config('filesystems.disks.s3.folder') . '/';
+        }
+
+        $directory = "{$directoryPrefix}uploads/{$mimeType}";
 
         // Ensure unique name in database - add random suffix if needed
         $storedName = $baseName;
@@ -45,20 +52,18 @@ class FileRepository extends Repository implements FileRepositoryInterface
             $storedName = $baseName . '-' . \Illuminate\Support\Str::random(8);
         }
 
-        // Check for storage path conflict
-        while (\Illuminate\Support\Facades\Storage::disk($storageDisk)->exists("{$directory}/{$storedName}.{$extension}")) {
-            $counter++;
-            $storedName = $baseName . '-' . \Illuminate\Support\Str::random(8);
+        try {
+            $filePath = $file->storeAs($directory, "{$storedName}.{$extension}", $storageDisk);
+        } catch (\Exception $e) {
+            throw $e;
         }
-
-        $filePath = $file->storeAs($directory, "{$storedName}.{$extension}", $storageDisk);
 
         $fileRecord = File::firstOrCreate(
             ['checksum' => $checksum],
             [
                 'name' => $storedName,
                 'original_name' => $originalName ?? \Lyre\File\Actions\NamesGenerator::generate(["delimiter" => "-"]),
-                'path' => $filePath,
+                'path' => $filePath ?? null,
                 'path_sm' => $resizedPaths['sm'] ?? null,
                 'path_md' => $resizedPaths['md'] ?? null,
                 'path_lg' => $resizedPaths['lg'] ?? null,

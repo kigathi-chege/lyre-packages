@@ -23,7 +23,7 @@
     "laravel 12"
   ],
   "license": "MIT",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "autoload": {
     "psr-4": {
       "Lyre\\File\\": "src/"
@@ -39,7 +39,7 @@
   "require": {
     "php": "^8.2",
     "intervention/image-laravel": "^1.5",
-    "lyre/lyre": "^1.1"
+    "lyre/lyre": "^2.0"
   },
   "extra": {
     "laravel": {

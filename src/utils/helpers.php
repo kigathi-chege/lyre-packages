@@ -32,6 +32,7 @@ if (!function_exists('generate_resized_versions')) {
             $unsupportedFormats = ['avif']; // AVIF is not supported by GD
 
             if (in_array($extension, $unsupportedFormats)) {
+                logger("File resize not supported.");
                 // Skip resizing for unsupported formats
                 return [];
             }

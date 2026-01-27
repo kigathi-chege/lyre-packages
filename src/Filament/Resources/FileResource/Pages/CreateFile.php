@@ -24,6 +24,7 @@ class CreateFile extends CreateRecord
             static::getResource()::isScopedToTenant() &&
             ($tenant = Filament::getTenant())
         ) {
+            $record->associateWithTenant($tenant);
             return $this->associateRecordWithTenant($record, $tenant);
         }
 

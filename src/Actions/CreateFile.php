@@ -8,7 +8,23 @@ class CreateFile
 {
     public static function make(array $data)
     {
-        $absolutePath = storage_path('app/public/' . $data['file']);
+        $possiblePaths = [
+            storage_path('app/public/' . $data['file']),
+            storage_path('app/private/' . $data['file']),
+        ];
+
+        $absolutePath = null;
+        foreach ($possiblePaths as $path) {
+            if (file_exists($path)) {
+                $absolutePath = $path;
+                break;
+            }
+        }
+
+        if (!$absolutePath) {
+            logger()->error("File not found in either public or private storage: {$data['file']}");
+            throw new \Exception("File '{$data['file']}' not found in public or private storage");
+        }
 
         $uploadedFile = new UploadedFile(
             $absolutePath,
@@ -17,9 +33,6 @@ class CreateFile
             null,
             true
         );
-
-        // $fileRepository = app(\Lyre\File\Repositories\Contracts\FileRepositoryInterface::class);
-        // $record = $fileRepository->uploadFile($uploadedFile, $data['name'] ?? null, $data['description'] ?? null, $data['attachment_file_names'] ?? null);
 
         $record = fileRepository()
             ->uploadFile(
