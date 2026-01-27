@@ -91,9 +91,10 @@ class ArticleAIFormComponents
                     ->options([
                         'dalle' => 'DALL-E (AI Generated)',
                         'openverse' => 'OpenVerse (Real Images)',
+                        'unsplash' => 'Unsplash (Professional Photos)',
                     ])
                     ->default($defaults['image_source'] ?? 'dalle')
-                    ->helperText('Choose whether to generate images with AI or search for real images from OpenVerse')
+                    ->helperText('Choose image source: AI-generated (DALL-E), curated images (OpenVerse), or professional photos (Unsplash). If primary source fails, fallback is automatic.')
                     ->visible(fn($get) => $get('add_images'))
                     ->live()
                     ->columnSpanFull(),
