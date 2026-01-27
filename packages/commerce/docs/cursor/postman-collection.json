@@ -1,0 +1,170 @@
+{
+  "info": {
+    "name": "Lyre Commerce API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Cart",
+      "item": [
+        {
+          "name": "Add Item",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"product_variant_id\": 1,\n  \"quantity\": 2\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/cart/add",
+              "host": ["{{base_url}}"],
+              "path": ["api", "cart", "add"]
+            }
+          }
+        },
+        {
+          "name": "Remove Item",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"product_variant_id\": 1\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/cart/remove",
+              "host": ["{{base_url}}"],
+              "path": ["api", "cart", "remove"]
+            }
+          }
+        },
+        {
+          "name": "Get Summary",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/cart/summary",
+              "host": ["{{base_url}}"],
+              "path": ["api", "cart", "summary"]
+            }
+          }
+        },
+        {
+          "name": "Apply Coupon",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"DEMO10\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/cart/apply-coupon",
+              "host": ["{{base_url}}"],
+              "path": ["api", "cart", "apply-coupon"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Checkout",
+      "item": [
+        {
+          "name": "Confirm Shipping",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"location_id\": 1,\n  \"address_line_1\": \"123 Main St\",\n  \"city\": \"Nairobi\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/checkout/confirm-shipping",
+              "host": ["{{base_url}}"],
+              "path": ["api", "checkout", "confirm-shipping"]
+            }
+          }
+        },
+        {
+          "name": "Confirm Order",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"order_id\": 1\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/checkout/confirm-order",
+              "host": ["{{base_url}}"],
+              "path": ["api", "checkout", "confirm-order"]
+            }
+          }
+        },
+        {
+          "name": "Invoice",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"order_id\": 1\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/checkout/invoice",
+              "host": ["{{base_url}}"],
+              "path": ["api", "checkout", "invoice"]
+            }
+          }
+        },
+        {
+          "name": "Pay (Mpesa)",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"order_id\": 1,\n  \"phone\": \"254712345678\",\n  \"payment_term_reference\": \"prepaid\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/checkout/pay",
+              "host": ["{{base_url}}"],
+              "path": ["api", "checkout", "pay"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Products",
+      "item": [
+        {
+          "name": "List Products",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/products?with=variants&search=demo&per_page=20",
+              "host": ["{{base_url}}"],
+              "path": ["api", "products"],
+              "query": [
+                {"key": "with", "value": "variants"},
+                {"key": "search", "value": "demo"},
+                {"key": "per_page", "value": "20"}
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://nipate.test",
+      "type": "string"
+    }
+  ]
+}
+
