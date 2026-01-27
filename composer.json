@@ -1,0 +1,34 @@
+{
+  "name": "lyre/monorepo",
+  "description": "Meta package for Lyre monorepo",
+  "type": "metapackage",
+  "require": {
+    "lyre/lyre": "*",
+    "lyre/content": "*",
+    "lyre/billing": "*",
+    "lyre/commerce": "*",
+    "lyre/facet": "*",
+    "lyre/file": "*",
+    "lyre/guest": "*",
+    "lyre/school": "*",
+    "lyre/settings": "*"
+  },
+  "minimum-stability": "dev",
+  "prefer-stable": true,
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "kigathi-chege",
+      "email": "chegekigathi@gmail.com"
+    }
+  ],
+  "repositories": [
+    {
+      "type": "path",
+      "url": "packages/*",
+      "options": {
+        "symlink": true
+      }
+    }
+  ]
+}
