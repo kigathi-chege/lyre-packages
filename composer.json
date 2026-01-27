@@ -19,7 +19,7 @@
     "laravel 12"
   ],
   "license": "MIT",
-  "version": "2.8.0",
+  "version": "2.8.1",
   "minimum-stability": "stable",
   "autoload": {
     "files": [
@@ -44,8 +44,8 @@
     "php": "^8.2",
     "intervention/image-laravel": "^1.5",
     "lyre/lyre": "^2.0",
-    "lyre/file": "^1.0",
-    "lyre/facet": "^1.0"
+    "lyre/file": "^1.4",
+    "lyre/facet": "^1.4"
   },
   "extra": {
     "laravel": {
