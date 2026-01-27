@@ -43,7 +43,7 @@
   "require": {
     "php": "^8.2",
     "intervention/image-laravel": "^1.5",
-    "lyre/lyre": "^1.1",
+    "lyre/lyre": "^2.0",
     "lyre/file": "^1.0",
     "lyre/facet": "^1.0"
   },
