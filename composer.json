@@ -40,7 +40,7 @@
   ],
   "require": {
     "php": "^8.2",
-    "lyre/lyre": "^1.1",
+    "lyre/lyre": "^2.0",
     "lyre/facet": "^1.0"
   },
   "extra": {
