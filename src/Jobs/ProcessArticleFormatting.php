@@ -139,43 +139,22 @@ class ProcessArticleFormatting implements ShouldQueue
         // Build the formatting prompt
         $prompt = $this->buildFormattingPrompt($article);
 
-        // Create request data
-        $requestData = [
-            'model' => config('services.openai.default_model', 'gpt-4'),
-            'messages' => [
-                [
-                    'role' => 'system',
-                    'content' => 'You are an expert content editor and formatter. You help format articles for publication. Always respond with valid JSON.',
-                ],
-                [
-                    'role' => 'user',
-                    'content' => $prompt,
-                ],
+        // Use the trait method to call OpenAI and extract JSON
+        $messages = [
+            [
+                'role' => 'system',
+                'content' => 'You are an expert content editor and formatter. You help format articles for publication. Always respond with valid JSON.',
             ],
-            'temperature' => 0.7,
+            [
+                'role' => 'user',
+                'content' => $prompt,
+            ],
         ];
 
-        // Only add response_format for models that support it
-        $model = config('services.openai.default_model', 'gpt-4');
-        if ($this->supportsJsonMode($model)) {
-            $requestData['response_format'] = ['type' => 'json_object'];
-        }
-
-        Log::info('🤖 Calling OpenAI API for formatting', [
-            'model' => $model,
-            'content_length' => strlen($article->content),
+        $aiResponse = $this->callOpenAIForJson($messages, [
+            'model' => config('services.openai.default_model', 'gpt-4'),
+            'temperature' => 0.7,
         ]);
-
-        $response = openai()->chat()->create($requestData);
-        $responseContent = $response['choices'][0]['message']['content'];
-
-        Log::info('✅ OpenAI API response received', [
-            'response_length' => strlen($responseContent),
-            'tokens_used' => $response['usage'] ?? null,
-        ]);
-
-        // Extract JSON from response
-        $aiResponse = $this->extractJsonFromResponse($responseContent);
 
         if (!$aiResponse) {
             throw new \Exception('Failed to parse AI response as JSON');
@@ -223,7 +202,7 @@ class ProcessArticleFormatting implements ShouldQueue
     "categories": ["category1", "category2"],';
 
         if ($this->config['add_images'] ?? false) {
-            if ($imageSource === 'openverse') {
+            if ($imageSource === 'openverse' || $imageSource === 'unsplash') {
                 $jsonStructure .= '
     "image_queries": ["search query 1", "search query 2"],
     "image_positions": [500, 1000],
@@ -278,10 +257,11 @@ PROMPT;
         if ($this->config['add_images'] ?? false) {
             $imageSource = $this->config['image_source'] ?? 'dalle';
 
-            if ($imageSource === 'openverse') {
-                // OpenVerse requires search queries
+            if ($imageSource === 'openverse' || $imageSource === 'unsplash') {
+                // OpenVerse/Unsplash require search queries
+                $sourceName = $imageSource === 'unsplash' ? 'Unsplash' : 'OpenVerse';
                 if ($this->config['add_inline_images'] ?? true) {
-                    $prompt .= "\n- Provide 2-4 search queries for finding real images from OpenVerse that would enhance the article";
+                    $prompt .= "\n- Provide 2-4 search queries for finding real images from {$sourceName} that would enhance the article";
                     $prompt .= "\n- Queries should be 2-4 words describing the visual content needed (e.g., 'mountain landscape sunset', 'business team meeting')";
                     $prompt .= "\n- Keep queries simple and descriptive, focusing on the visual subject matter";
                     $prompt .= "\n- Include image_positions array with character positions in the content where each image should be inserted";

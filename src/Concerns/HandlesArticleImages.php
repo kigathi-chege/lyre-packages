@@ -1,4 +1,5 @@
 <?php
+
 namespace Lyre\Content\Concerns;
 
 use Illuminate\Support\Facades\Log;
@@ -104,6 +105,77 @@ trait HandlesArticleImages
     }
 
     /**
+     * Search for image using Unsplash
+     */
+    protected function searchUnsplashImage(string $query): ?array
+    {
+        try {
+            Log::info('🔍 Searching Unsplash', [
+                'query' => $query,
+            ]);
+
+            $response = unsplash()->searchPhotos([
+                'query' => $query,
+                'per_page' => 5,
+                'order_by' => 'relevant',
+                'content_filter' => 'high', // Safe content only
+            ]);
+
+            if ($response->failed()) {
+                Log::error('❌ Unsplash API request failed', [
+                    'status' => $response->status(),
+                    'body' => $response->body(),
+                ]);
+                return null;
+            }
+
+            $results = $response->json()['results'] ?? [];
+
+            if (empty($results)) {
+                Log::warning('⚠️ No images found on Unsplash', ['query' => $query]);
+                return null;
+            }
+
+            // Return the first result with all required metadata
+            $photo = $results[0];
+
+            Log::info('✅ Unsplash image found', [
+                'id' => $photo['id'] ?? null,
+                'description' => $photo['alt_description'] ?? null,
+                'photographer' => $photo['user']['name'] ?? null,
+            ]);
+
+            return [
+                'id' => $photo['id'] ?? null,
+                'urls' => [
+                    'raw' => $photo['urls']['raw'] ?? null,
+                    'full' => $photo['urls']['full'] ?? null,
+                    'regular' => $photo['urls']['regular'] ?? null,
+                    'small' => $photo['urls']['small'] ?? null,
+                    'thumb' => $photo['urls']['thumb'] ?? null,
+                ],
+                'description' => $photo['description'] ?? $photo['alt_description'] ?? 'Untitled',
+                'alt_description' => $photo['alt_description'] ?? null,
+                'width' => $photo['width'] ?? null,
+                'height' => $photo['height'] ?? null,
+                // Photographer information (REQUIRED for attribution per Unsplash guidelines)
+                'photographer_name' => $photo['user']['name'] ?? null,
+                'photographer_username' => $photo['user']['username'] ?? null,
+                'photographer_url' => $photo['user']['links']['html'] ?? null,
+                // Links (REQUIRED for download tracking per Unsplash guidelines)
+                'photo_page' => $photo['links']['html'] ?? null,
+                'download_location' => $photo['links']['download_location'] ?? null,
+            ];
+        } catch (\Exception $e) {
+            Log::error('❌ Failed to search Unsplash', [
+                'query' => $query,
+                'error' => $e->getMessage(),
+            ]);
+            return null;
+        }
+    }
+
+    /**
      * Download and save OpenVerse image with attribution
      * Uses FileRepository for proper file processing
      */
@@ -169,6 +241,111 @@ trait HandlesArticleImages
             return $fileModel;
         } catch (\Exception $e) {
             Log::error('❌ Failed to download OpenVerse image', [
+                'name' => $name,
+                'error' => $e->getMessage(),
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * Download and save Unsplash image with attribution
+     * Uses FileRepository for proper file processing
+     * CRITICAL: Tracks download per Unsplash API guidelines
+     */
+    protected function downloadUnsplashImage(array $imageData, string $name): ?FileModel
+    {
+        try {
+            // Prefer 'small' or 'regular' for balance between quality and size
+            // Regular: ~1080px, Small: ~400px, Thumb: ~200px
+            $imageUrl = $imageData['urls']['regular'] ?? $imageData['urls']['small'] ?? $imageData['urls']['thumb'] ?? null;
+
+            if (!$imageUrl) {
+                Log::warning('⚠️ No image URL provided in Unsplash data', ['image_data' => $imageData]);
+                return null;
+            }
+
+            Log::info('📥 Downloading Unsplash image', [
+                'name' => $name,
+                'photographer' => $imageData['photographer_name'] ?? null,
+                'photo_id' => $imageData['id'] ?? null,
+            ]);
+
+            // Prepare metadata for attribution (REQUIRED per Unsplash guidelines)
+            // Include UTM parameters for proper tracking
+            $appName = config('app.name', 'nipate');
+            $photographerUrl = $imageData['photographer_url'] . "?utm_source={$appName}&utm_medium=referral";
+            $photoPage = $imageData['photo_page'] . "?utm_source={$appName}&utm_medium=referral";
+
+            $metadata = [
+                'source' => 'unsplash',
+                'unsplash_id' => $imageData['id'] ?? null,
+                'description' => $imageData['description'] ?? null,
+                'alt_description' => $imageData['alt_description'] ?? null,
+
+                // Photographer attribution (REQUIRED)
+                'photographer_name' => $imageData['photographer_name'] ?? null,
+                'photographer_username' => $imageData['photographer_username'] ?? null,
+                'photographer_url' => $photographerUrl,
+
+                // Photo page (REQUIRED)
+                'photo_page' => $photoPage,
+
+                // Download location for tracking (REQUIRED)
+                'download_location' => $imageData['download_location'] ?? null,
+
+                // Image dimensions
+                'width' => $imageData['width'] ?? null,
+                'height' => $imageData['height'] ?? null,
+                'urls' => $imageData['urls'] ?? null,
+            ];
+
+            // Upload using the reusable trait method with 3MB limit for images
+            $fileModel = $this->uploadFileFromUrl(
+                url: $imageUrl,
+                name: $name,
+                description: "Unsplash photo by {$imageData['photographer_name']}",
+                metadata: $metadata,
+                maxSizeBytes: 3145728 // 3MB max for images
+            );
+
+            if (!$fileModel) {
+                Log::warning('⚠️ Failed to download Unsplash image, possibly too large', [
+                    'url' => $imageUrl,
+                    'name' => $name,
+                ]);
+                return null;
+            }
+
+            // Associate with tenant
+            $config = $this->getConfig();
+            $this->associateFileWithTenant($fileModel, $config['tenant_id'] ?? null);
+
+            // CRITICAL: Track download per Unsplash API guidelines
+            // This is REQUIRED when a user chooses to use an Unsplash image
+            if (!empty($imageData['download_location'])) {
+                try {
+                    unsplash()->trackDownload($imageData['download_location']);
+                    Log::info('✅ Unsplash download tracked', [
+                        'photo_id' => $imageData['id'],
+                    ]);
+                } catch (\Exception $e) {
+                    Log::warning('⚠️ Failed to track Unsplash download (non-fatal)', [
+                        'photo_id' => $imageData['id'],
+                        'error' => $e->getMessage(),
+                    ]);
+                    // Non-fatal: continue even if tracking fails
+                }
+            }
+
+            Log::info('✅ Unsplash image saved with attribution', [
+                'file_id' => $fileModel->id,
+                'photographer' => $metadata['photographer_name'],
+            ]);
+
+            return $fileModel;
+        } catch (\Exception $e) {
+            Log::error('❌ Failed to download Unsplash image', [
                 'name' => $name,
                 'error' => $e->getMessage(),
             ]);
@@ -329,7 +506,7 @@ trait HandlesArticleImages
         $imagePositions = $articleData['image_positions'] ?? [];
 
         // Determine which field to use based on image source
-        if ($imageSource === 'openverse') {
+        if ($imageSource === 'openverse' || $imageSource === 'unsplash') {
             $imageData = $articleData['image_queries'] ?? [];
             $featuredImageData = $articleData['featured_image_query'] ?? null;
         } else {
@@ -356,6 +533,36 @@ trait HandlesArticleImages
                     if ($openVerseImage) {
                         $fileModel = $this->downloadOpenVerseImage($openVerseImage, "inline-image-{$index}");
                         $altText = $openVerseImage['title'] ?? $imageDataItem;
+                    }
+
+                    // Fallback to Unsplash if OpenVerse fails
+                    if (!$fileModel) {
+                        Log::info('📸 OpenVerse failed, trying Unsplash as fallback', ['query' => $imageDataItem]);
+                        $unsplashImage = $this->searchUnsplashImage($imageDataItem);
+
+                        if ($unsplashImage) {
+                            $fileModel = $this->downloadUnsplashImage($unsplashImage, "inline-image-{$index}");
+                            $altText = $unsplashImage['description'] ?? $imageDataItem;
+                        }
+                    }
+                } elseif ($imageSource === 'unsplash') {
+                    // Search Unsplash for image
+                    $unsplashImage = $this->searchUnsplashImage($imageDataItem);
+
+                    if ($unsplashImage) {
+                        $fileModel = $this->downloadUnsplashImage($unsplashImage, "inline-image-{$index}");
+                        $altText = $unsplashImage['description'] ?? $imageDataItem;
+                    }
+
+                    // Fallback to OpenVerse if Unsplash fails
+                    if (!$fileModel) {
+                        Log::info('📸 Unsplash failed, trying OpenVerse as fallback', ['query' => $imageDataItem]);
+                        $openVerseImage = $this->searchOpenVerseImage($imageDataItem);
+
+                        if ($openVerseImage) {
+                            $fileModel = $this->downloadOpenVerseImage($openVerseImage, "inline-image-{$index}");
+                            $altText = $openVerseImage['title'] ?? $imageDataItem;
+                        }
                     }
                 } else {
                     // Generate image with DALL-E
@@ -420,6 +627,33 @@ trait HandlesArticleImages
                 if ($openVerseImage) {
                     $fileModel = $this->downloadOpenVerseImage($openVerseImage, 'featured-image');
                 }
+
+                // Fallback to Unsplash if OpenVerse fails
+                if (!$fileModel) {
+                    Log::info('📸 OpenVerse failed for featured image, trying Unsplash as fallback');
+                    $unsplashImage = $this->searchUnsplashImage($featuredImageData);
+
+                    if ($unsplashImage) {
+                        $fileModel = $this->downloadUnsplashImage($unsplashImage, 'featured-image');
+                    }
+                }
+            } elseif ($imageSource === 'unsplash') {
+                // Search Unsplash for featured image
+                $unsplashImage = $this->searchUnsplashImage($featuredImageData);
+
+                if ($unsplashImage) {
+                    $fileModel = $this->downloadUnsplashImage($unsplashImage, 'featured-image');
+                }
+
+                // Fallback to OpenVerse if Unsplash fails
+                if (!$fileModel) {
+                    Log::info('📸 Unsplash failed for featured image, trying OpenVerse as fallback');
+                    $openVerseImage = $this->searchOpenVerseImage($featuredImageData);
+
+                    if ($openVerseImage) {
+                        $fileModel = $this->downloadOpenVerseImage($openVerseImage, 'featured-image');
+                    }
+                }
             } else {
                 // Generate featured image with DALL-E
                 $imageUrl = $this->generateImage($featuredImageData);
@@ -445,6 +679,7 @@ trait HandlesArticleImages
 
     /**
      * Attach featured image to article from URL
+     * Uses UploadsFilesFromUrl trait for proper file handling
      */
     protected function attachFeaturedImageFromUrl(Article $article, string $imageUrl): void
     {
@@ -453,37 +688,32 @@ trait HandlesArticleImages
         ]);
 
         try {
-            $imageContents = file_get_contents($imageUrl);
-            if ($imageContents === false) {
-                throw new \Exception('Failed to download image');
+            $filename = 'featured-' . $article->slug . '-' . time();
+
+            // Use the trait method for proper file handling
+            $fileModel = $this->uploadFileFromUrl(
+                url: $imageUrl,
+                name: $filename,
+                description: "Featured image for article: {$article->title}",
+                metadata: ['source' => 'article_featured'],
+                maxSizeBytes: 3145728 // 3MB max for images
+            );
+
+            if (!$fileModel) {
+                throw new \Exception('Failed to upload image from URL');
             }
 
-            $filename = 'featured-' . $article->slug . '-' . time() . '.png';
-            $path     = 'articles/' . date('Y/m') . '/' . $filename;
-
-            Storage::disk('public')->put($path, $imageContents);
-
-            $file = FileModel::create([
-                'name'      => $filename,
-                'path'      => $path,
-                'disk'      => 'public',
-                'mime_type' => 'image/png',
-                'size'      => strlen($imageContents),
-                'status'    => 'published',
-            ]);
-
+            // Associate with tenant
             $config = $this->getConfig();
-            if ($config['tenant_id'] ?? null) {
-                $file->associateWithTenant($config['tenant_id']);
-            }
+            $this->associateFileWithTenant($fileModel, $config['tenant_id'] ?? null);
 
             // Attach to article (single file, so we detach existing first)
             $article->files()->detach();
-            $article->files()->attach($file->id);
+            $article->files()->attach($fileModel->id);
 
             Log::info('✅ Featured image attached', [
                 'article_id' => $article->id,
-                'file_id'    => $file->id,
+                'file_id'    => $fileModel->id,
             ]);
         } catch (\Exception $e) {
             Log::error('❌ Failed to attach featured image', [

@@ -468,52 +468,25 @@ class ArticleUploadService
     {
         $prompt = $this->buildAIPrompt($content, $filename);
 
-        $requestData = [
-            'model'       => config('services.openai.default_model', 'gpt-4'),
-            'messages'    => [
-                [
-                    'role'    => 'system',
-                    'content' => 'You are an expert content editor and formatter. You help format articles for publication. Always respond with valid JSON.',
-                ],
-                [
-                    'role'    => 'user',
-                    'content' => $prompt,
-                ],
+        // Use the trait method to call OpenAI and extract JSON
+        $messages = [
+            [
+                'role'    => 'system',
+                'content' => 'You are an expert content editor and formatter. You help format articles for publication. Always respond with valid JSON.',
             ],
-            'temperature' => 0.7,
+            [
+                'role'    => 'user',
+                'content' => $prompt,
+            ],
         ];
 
-        // Only add response_format for models that support it
-        $model = config('services.openai.default_model', 'gpt-4');
-        if ($this->supportsJsonMode($model)) {
-            $requestData['response_format'] = ['type' => 'json_object'];
-        }
-
-        Log::info('🤖 Calling OpenAI API', [
-            'model'              => $model,
-            'content_length'     => strlen($content),
-            'prompt_length'      => strlen($prompt),
-            'supports_json_mode' => $this->supportsJsonMode($model),
+        $aiResponse = $this->callOpenAIForJson($messages, [
+            'model' => config('services.openai.default_model', 'gpt-4'),
+            'temperature' => 0.7,
         ]);
-
-        $response = openai()->chat()->create($requestData);
-
-        $responseContent = $response['choices'][0]['message']['content'];
-
-        Log::info('✅ OpenAI API response received', [
-            'model'           => $model,
-            'response_length' => strlen($responseContent),
-            'tokens_used'     => $response['usage'] ?? null,
-        ]);
-
-        // Extract JSON from response (handles both pure JSON and markdown-wrapped JSON)
-        $aiResponse = $this->extractJsonFromResponse($responseContent);
 
         if (! $aiResponse) {
-            Log::error('❌ Failed to parse AI response', [
-                'response_preview' => substr($responseContent, 0, 200),
-            ]);
-            throw new \Exception('Failed to parse AI response as JSON. Response: ' . substr($responseContent, 0, 200));
+            throw new \Exception('Failed to parse AI response as JSON');
         }
 
         Log::debug('✅ AI response parsed successfully', [
@@ -571,7 +544,7 @@ class ArticleUploadService
         if ($this->config['add_images'] ?? false) {
             $imageSource = $this->config['image_source'] ?? 'dalle';
 
-            if ($imageSource === 'openverse') {
+            if ($imageSource === 'openverse' || $imageSource === 'unsplash') {
                 $prompt .= '  "image_queries": ["search query 1", "search query 2"],' . "\n";
                 $prompt .= '  "featured_image_query": "search query for featured image",' . "\n";
             } else {
@@ -594,8 +567,8 @@ class ArticleUploadService
         if ($this->config['add_images'] ?? false) {
             $imageSource = $this->config['image_source'] ?? 'dalle';
 
-            if ($imageSource === 'openverse') {
-                $prompt .= "For images: Suggest specific, concise search queries to find relevant images on OpenVerse (a database of openly licensed images). ";
+            if ($imageSource === 'openverse' || $imageSource === 'unsplash') {
+                $prompt .= "For images: Suggest specific, concise search queries to find relevant images (from " . ucfirst($imageSource) . ", a database of openly licensed/professional images). ";
                 $prompt .= "Queries should be 2-4 words describing the visual content needed (e.g., 'mountain landscape sunset', 'business team meeting'). ";
             } else {
                 $prompt .= "For images: Suggest specific, descriptive prompts for DALL-E to generate relevant images. ";
