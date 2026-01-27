@@ -1,0 +1,76 @@
+name: Publish packages
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout monorepo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Determine changed packages
+        id: changes
+        run: |
+          echo "::set-output name=changed::$(git diff --name-only HEAD~1 HEAD | grep '^packages/' | cut -d/ -f2 | sort -u | tr '\n' ' ')"
+
+      - name: Publish each changed package
+        if: steps.changes.outputs.changed != ''
+        run: |
+          PACKAGES="${{ steps.changes.outputs.changed }}"
+          echo "Changed packages: $PACKAGES"
+
+          for PKG in $PACKAGES; do
+            echo "---- PUBLISH: $PKG ----"
+
+            # Map package to repo URL
+            case "$PKG" in
+              billing) REPO="git@github.com:kigathi-chege/lyre-billing.git" ;;
+              commerce) REPO="git@github.com:kigathi-chege/lyre-commerce.git" ;;
+              content) REPO="git@github.com:kigathi-chege/lyre-content.git" ;;
+              facet) REPO="git@github.com:kigathi-chege/lyre-facet.git" ;;
+              file) REPO="git@github.com:kigathi-chege/lyre-file.git" ;;
+              guest) REPO="git@github.com:kigathi-chege/lyre-guest.git" ;;
+              lyre) REPO="git@github.com:kigathi-chege/lyre.git" ;;
+              school) REPO="git@github.com:kigathi-chege/lyre-school.git" ;;
+              settings) REPO="git@github.com:kigathi-chege/lyre-settings.git" ;;
+              *)
+                echo "Unknown package: $PKG"
+                exit 1
+                ;;
+            esac
+
+            # Determine version from composer.json
+            VERSION=$(cat packages/$PKG/composer.json | jq -r '.version')
+
+            if [[ "$VERSION" == "null" || -z "$VERSION" ]]; then
+              echo "No version found in packages/$PKG/composer.json"
+              exit 1
+            fi
+
+            TAG="$PKG/$VERSION"
+            echo "Tag will be: $TAG"
+
+            # Split subtree into temp branch
+            git subtree split --prefix=packages/$PKG -b release/$PKG/$VERSION
+
+            # Push to remote main
+            git push "$REPO" "release/$PKG/$VERSION:main" --force
+
+            # Push tag
+            git push "$REPO" "refs/tags/$TAG"
+
+            # Cleanup
+            git branch -D release/$PKG/$VERSION
+          done
