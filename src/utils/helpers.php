@@ -1,10 +1,10 @@
 <?php
 
-if (!function_exists('get_file_name_without_extension')) {
+if (! function_exists('get_file_name_without_extension')) {
     function get_file_name_without_extension($file, $name = null)
     {
         $extension = $file->getClientOriginalExtension();
-        $fileName = $name ? $name : pathinfo($file->getClientOriginalName(), PATHINFO_FILENAME);
+        $fileName  = $name ? $name : pathinfo($file->getClientOriginalName(), PATHINFO_FILENAME);
         if (substr_compare($fileName, $extension, -strlen($extension)) === 0) {
             $fileName = str_replace($extension, '', $fileName);
             if (substr($fileName, -1) === '.') {
@@ -15,7 +15,7 @@ if (!function_exists('get_file_name_without_extension')) {
     }
 }
 
-if (!function_exists('get_file_extension')) {
+if (! function_exists('get_file_extension')) {
     function get_file_extension($file, $extension = null)
     {
         $extension = $extension ? $extension : ($file->getClientOriginalExtension() ? $file->getClientOriginalExtension() : "jpg");
@@ -23,12 +23,12 @@ if (!function_exists('get_file_extension')) {
     }
 }
 
-if (!function_exists('generate_resized_versions')) {
+if (! function_exists('generate_resized_versions')) {
     function generate_resized_versions($file, $mimeType)
     {
         try {
             // Check if format is supported by GD
-            $extension = strtolower(pathinfo($file->getRealPath(), PATHINFO_EXTENSION) ?: $file->getClientOriginalExtension());
+            $extension          = strtolower(pathinfo($file->getRealPath(), PATHINFO_EXTENSION) ?: $file->getClientOriginalExtension());
             $unsupportedFormats = ['avif']; // AVIF is not supported by GD
 
             if (in_array($extension, $unsupportedFormats)) {
@@ -44,10 +44,10 @@ if (!function_exists('generate_resized_versions')) {
             // }
 
             $image = \Intervention\Image\Laravel\Facades\Image::read($file->getRealPath());
-            $disk = config('filesystems.default');
+            $disk  = config('filesystems.default');
 
             $variants = [];
-            $sizes = [
+            $sizes    = [
                 'sm' => 150,
                 'md' => 300,
                 'lg' => 600,
@@ -56,7 +56,9 @@ if (!function_exists('generate_resized_versions')) {
             foreach ($sizes as $label => $width) {
                 $resized = $image->scale(width: $width);
 
-                $filename = 'uploads/' . $mimeType . '/' . \Illuminate\Support\Str::uuid() . "_{$label}." . $file->getClientOriginalExtension();
+                $extension = get_file_extension($file);
+
+                $filename = 'uploads/' . $mimeType . '/' . \Illuminate\Support\Str::uuid() . "_{$label}." . $extension;
 
                 \Illuminate\Support\Facades\Storage::disk($disk)->put($filename, (string) $resized->encode());
 
