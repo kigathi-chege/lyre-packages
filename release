@@ -8,6 +8,7 @@ DRY_RUN=false
 SHOW_HELP=false
 ARGS=()
 MONOREPO_DEFAULT_BRANCH=main
+LIST_SUBMODULES=false
 
 #############################################
 # Parse flags
@@ -22,6 +23,10 @@ while [[ $# -gt 0 ]]; do
       SHOW_HELP=true
       shift
       ;;
+    -l|--list)
+      LIST_SUBMODULES=true
+      shift
+      ;;
     *)
       ARGS+=("$1")
       shift
@@ -29,42 +34,91 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+if $LIST_SUBMODULES; then
+  echo "📦 Submodules in this monorepo:"
+  git submodule status --recursive | awk '{print $2}' | awk -F/ '{print $2}' | sort
+  exit 0
+fi
+
 #############################################
 # Help
 #############################################
 if [[ "$SHOW_HELP" == true ]]; then
   cat <<'EOF'
-release — multi-package release CLI
+release — multi-package release CLI for Lyre monorepo
 
 USAGE:
   release [options] <spec> [<spec>...]
 
 OPTIONS:
-  -n, --dry-run    Show what would happen, do nothing
+  -n, --dry-run    Preview actions, do not execute any git or publish changes
   -h, --help       Show this help message
 
-SPECS (any mix):
-  content
-  content 1.4.0
-  content 1.4.0 "feat(content): message"
-  content:version=1.4.0,message="feat..."
-  file:version=1.3.2
-  lyre:version=2.0.0,message="breaking change"
+SPECS:
+  A "spec" defines which package(s) to release, optionally with a version and commit message.
 
-EXAMPLES:
-  release content file
-  release content 1.4.0
-  release -n content 1.4.0 "feat..."
-  release content:version=1.4.0,message="feat..."
+  Single package (auto version detection):
+    content
+
+  Single package with explicit version:
+    content 1.4.0
+
+  Single package with explicit version and commit message:
+    content 1.4.0 "feat(content): add new feature"
+
+  Key-value style:
+    content:version=1.4.0,message="feat(content): add new feature"
+    lyre:version=2.0.0,message="breaking change"
+
+  Special keywords:
+    all       Release all packages
+    changed   Release only packages with unpushed commits or staged changes
+    auto      Release only packages with detected changes since the latest tag
+    since <git-ref>  Release packages changed since a Git reference, e.g., main
 
 NOTES:
-- Runs safely from any directory inside the repo
-- Uses submodules
-- Publishes only what changed
+- Can be run from **any directory** inside the monorepo
+- Works with Git submodules
+- Invokes publish.sh for each released package
+- Safe to use with `--dry-run` to preview actions
+- Auto-detects semantic version bumps:
+    - Commit messages containing "breaking" → major
+    - Commit messages containing "feat" → minor
+    - Other changes → patch
+
+EXAMPLES:
+
+# Release a single package with auto-detected version
+release content
+
+# Release multiple packages
+release content file
+
+# Release with explicit version
+release content 1.4.0
+
+# Release with explicit version and custom commit message
+release content 1.4.0 "feat(content): add new feature"
+
+# Key-value style release
+release content:version=1.4.0,message="feat(content): add new feature"
+
+# Dry-run preview without pushing or publishing
+release -n content 1.4.0 "feat(content): test dry run"
+
+# Release all changed packages automatically
+release auto
+
+# Release all packages regardless of changes
+release all
+
+# Release packages changed since a Git ref
+release since main
 
 EOF
   exit 0
 fi
+
 
 command -v jq >/dev/null || {
   echo "❌ jq is required to update composer.json"
@@ -86,8 +140,10 @@ cd "$REPO_ROOT"
 #############################################
 # Helper
 #############################################
+is_dry_run() { [[ "$DRY_RUN" == true ]]; }
+
 run() {
-  if $DRY_RUN; then
+  if is_dry_run; then
     echo "🟡 DRY-RUN: $*"
   else
     "$@"
@@ -196,7 +252,10 @@ parse_specs() {
       VERSION="${specs[$((i+1))]:-}"
       MESSAGE="${specs[$((i+2))]:-}"
 
-      [[ -n "$VERSION" && ! is_version "$VERSION" ]] && VERSION=""
+      if [[ -n "$VERSION" ]] && ! is_version "$VERSION"; then
+        VERSION=""
+      fi
+
       [[ "$MESSAGE" == *:* || "$MESSAGE" == -* ]] && MESSAGE=""
 
       echo "$PKG|$VERSION|$MESSAGE"
@@ -228,7 +287,11 @@ UPDATED_SUBMODULES=()
 for task in "${TASKS[@]}"; do
   IFS='|' read -r PKG VERSION MESSAGE <<< "$task"
   PKG_PATH="packages/$PKG"
-  [[ ! -d "$PKG_PATH/.git" ]] && { echo "❌ $PKG is not a submodule"; exit 1; }
+  # [[ ! -d "$PKG_PATH/.git" ]] && { echo "❌ $PKG is not a submodule"; exit 1; }
+  if [[ ! -d "$PKG_PATH/.git" && ! -f "$PKG_PATH/.git" ]]; then
+    echo "❌ $PKG is not a submodule"
+    exit 1
+  fi
   git submodule update --init "$PKG_PATH"
 
   echo ""
@@ -257,6 +320,8 @@ for task in "${TASKS[@]}"; do
       VERSION=$(bump_version "$BASE" "$TYPE")
     else
       VERSION=""
+      echo "ℹ️  Auto mode: no changes detected for $PKG → skipping release"
+      continue
     fi
   fi
 
@@ -312,4 +377,8 @@ if [[ ${#UPDATED_SUBMODULES[@]} -gt 0 ]]; then
 fi
 
 echo ""
-echo "✅ Release finished${DRY_RUN:+ (dry-run)}"
+if is_dry_run; then
+  echo "✅ Release finished (dry-run)"
+else
+  echo "✅ Release finished"
+fi
