@@ -78,8 +78,8 @@ REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || true)
 [[ -z "$REPO_ROOT" ]] && { echo "❌ Not in a git repo"; exit 1; }
 cd "$REPO_ROOT"
 
-[[ -x ./submodule-publish.sh ]] || {
-  echo "❌ submodule-publish.sh not found or not executable"
+[[ -x ./publish.sh ]] || {
+  echo "❌ publish.sh not found or not executable"
   exit 1
 }
 
@@ -285,8 +285,8 @@ for task in "${TASKS[@]}"; do
   popd >/dev/null
 
   if [[ -n "$VERSION" ]]; then
-    # Pass DRY_RUN to submodule-publish.sh
-    ./submodule-publish.sh "$PKG" "$VERSION" "$DRY_RUN"
+    # Pass DRY_RUN to publish.sh
+    ./publish.sh "$PKG" "$VERSION" "$DRY_RUN"
   fi
 
   UPDATED_SUBMODULES+=("$PKG")

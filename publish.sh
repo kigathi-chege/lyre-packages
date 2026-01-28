@@ -1,69 +1,82 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PKG=$1
-VERSION=$2
+PKG=${1:-}
+VERSION=${2:-}
+DRY_RUN=${3:-false} # optional third argument
 
 if [[ -z "$PKG" || -z "$VERSION" ]]; then
-  echo "Usage: ./publish.sh <package> <version>"
+  echo "Usage: ./submodule-publish.sh <package> <version> [dry-run]"
   exit 1
 fi
 
-# -------------------------
-# Determine individual repo name
-# -------------------------
-if [[ "$PKG" == "lyre" ]]; then
-  REMOTE_REPO="lyre"
+SUBMODULE_PATH="packages/${PKG}"
+MONOREPO_ROOT=$(pwd)
+
+[[ -d "$SUBMODULE_PATH/.git" ]] || { echo "❌ ${SUBMODULE_PATH} is not a git submodule"; exit 1; }
+
+echo "---------------------------------------"
+echo "Publishing package: ${PKG}"
+echo "Version: ${VERSION}"
+echo "DRY_RUN: ${DRY_RUN}"
+echo "---------------------------------------"
+
+# Ensure monorepo is clean
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  echo "❌ Monorepo working tree is dirty. Commit or stash first."
+  exit 1
+fi
+
+cd "$SUBMODULE_PATH"
+
+# Ensure submodule is clean
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  echo "❌ Submodule ${PKG} has uncommitted changes."
+  exit 1
+fi
+
+# Determine default branch
+DEFAULT_BRANCH=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null || echo "main")
+echo "Default branch: ${DEFAULT_BRANCH}"
+
+git checkout "$DEFAULT_BRANCH"
+
+# Create tag if it doesn't exist
+if git rev-parse "$VERSION" >/dev/null 2>&1; then
+  echo "⚠️ Tag $VERSION already exists locally, skipping creation"
 else
-  REMOTE_REPO="lyre-$PKG"
+  if [[ "$DRY_RUN" == true ]]; then
+    echo "🟡 DRY-RUN: git tag -a $VERSION -m 'Release $VERSION'"
+  else
+    git tag -a "$VERSION" -m "Release $VERSION"
+  fi
 fi
 
-REMOTE_URL="https://github.com/kigathi-chege/${REMOTE_REPO}.git"
-
-# -------------------------
-# Determine default branch of individual repo
-# -------------------------
-DEFAULT_BRANCH=$(git ls-remote --symref "$REMOTE_URL" HEAD 2>/dev/null | awk '/^ref:/ {print $2}' | sed 's@^refs/heads/@@')
-
-if [[ -z "$DEFAULT_BRANCH" ]]; then
-  echo "Could not determine default branch of ${REMOTE_REPO}."
-  exit 1
+# Push commits + tag
+if [[ "$DRY_RUN" == true ]]; then
+  echo "🟡 DRY-RUN: git push origin $DEFAULT_BRANCH"
+  echo "🟡 DRY-RUN: git push origin $VERSION"
+else
+  git push origin "$DEFAULT_BRANCH"
+  git push origin "$VERSION" || echo "⚠️ Tag $VERSION may already exist on remote"
 fi
 
-echo "Default branch of ${REMOTE_REPO} is: ${DEFAULT_BRANCH}"
+cd "$MONOREPO_ROOT"
 
-# -------------------------
-# Backup default branch (always)
-# -------------------------
-git checkout "$DEFAULT_BRANCH"
+# Update submodule pointer
+git add "$SUBMODULE_PATH"
+if ! git diff --cached --quiet; then
+  if [[ "$DRY_RUN" == true ]]; then
+    echo "🟡 DRY-RUN: git commit -m 'chore($PKG): bump to $VERSION'"
+    echo "🟡 DRY-RUN: git push"
+  else
+    git commit -m "chore(${PKG}): bump to ${VERSION}"
+    git push
+  fi
+else
+  echo "ℹ️  No submodule pointer change to commit"
+fi
 
-TIMESTAMP=$(date +%Y%m%d%H%M%S)
-BACKUP_BRANCH="${DEFAULT_BRANCH}-${TIMESTAMP}"
-
-git branch -f "${BACKUP_BRANCH}"
-echo "Created backup branch: ${BACKUP_BRANCH}"
-
-# PUSH BACKUP to remote
-git push "$REMOTE_URL" "${BACKUP_BRANCH}" --force
-echo "Backup pushed to remote: ${BACKUP_BRANCH}"
-
-# -------------------------
-# Subtree split + push
-# -------------------------
-SUBTREE_BRANCH="release/$PKG-$VERSION"
-
-git subtree split --prefix=packages/$PKG -b "$SUBTREE_BRANCH"
-git checkout "$SUBTREE_BRANCH"
-
-# Create tag in this branch (ensures tag exists in subtree)
-git tag -f "$VERSION"
-
-# Push changes to individual repo (force is needed)
-git push "$REMOTE_URL" "$SUBTREE_BRANCH:${DEFAULT_BRANCH}" --force
-
-# Push tag to remote
-git push "$REMOTE_URL" "refs/tags/$VERSION" --force
-
-# Cleanup
-git checkout "$DEFAULT_BRANCH"
-git branch -D "$SUBTREE_BRANCH"
+echo "---------------------------------------"
+echo "✅ Publish complete for ${PKG} ${VERSION}"
+echo "---------------------------------------"
