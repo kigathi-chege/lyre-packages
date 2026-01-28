@@ -61,6 +61,7 @@ fi
 
 # Determine default branch
 DEFAULT_BRANCH=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null || echo "main")
+DEFAULT_BRANCH="${DEFAULT_BRANCH#origin/}"
 echo "Default branch: ${DEFAULT_BRANCH}"
 
 # DEFAULT_BRANCH=${MONOREPO_DEFAULT_BRANCH:-main}
@@ -69,7 +70,7 @@ if git show-ref --verify --quiet "refs/heads/$DEFAULT_BRANCH"; then
     run git checkout "$DEFAULT_BRANCH"
 else
     # Create local branch tracking remote if it doesn't exist
-    run git checkout -b "$DEFAULT_BRANCH" "$DEFAULT_BRANCH"
+    run git checkout -b "$DEFAULT_BRANCH" "origin/$DEFAULT_BRANCH"
 fi
 
 
