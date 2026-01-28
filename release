@@ -353,10 +353,11 @@ for task in "${TASKS[@]}"; do
 
   CURRENT_BRANCH=$(git branch --show-current)
   
-  [[ "$CURRENT_BRANCH" != "$MONOREPO_DEFAULT_BRANCH" ]] && {
-    echo "❌ Not on default branch ($MONOREPO_DEFAULT_BRANCH)"
-    exit 1
-  }
+  # NOTE: Pushing to current branch always
+  # [[ "$CURRENT_BRANCH" != "$MONOREPO_DEFAULT_BRANCH" ]] && {
+  #   echo "❌ Not on default branch ($MONOREPO_DEFAULT_BRANCH)"
+  #   exit 1
+  # }
 
   # Detect changes inside submodule properly
   CHANGED_FILES="$(git status --porcelain)"
