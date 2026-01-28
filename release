@@ -325,6 +325,9 @@ done
 
 UPDATED_SUBMODULES=()
 
+# Array to hold packages and versions for final publish
+declare -A TO_PUBLISH=()
+
 for task in "${TASKS[@]}"; do
   IFS='|' read -r PKG VERSION MESSAGE <<< "$task"
   PKG_PATH="packages/$PKG"
@@ -412,12 +415,9 @@ for task in "${TASKS[@]}"; do
 
   popd >/dev/null
 
-  # Publish if version specified
-  if [[ -n "$VERSION" ]]; then
-    ./publish.sh "$PKG" "$VERSION" "$DRY_RUN"
-  fi
-
   UPDATED_SUBMODULES+=("$PKG")
+  # Store for later publishing
+  TO_PUBLISH["$PKG"]="$VERSION"
 done
 
 # --------------------------
@@ -468,6 +468,14 @@ if [[ ${#UPDATED_SUBMODULES[@]} -gt 0 ]]; then
     echo "ℹ️  Monorepo pointers and root metadata already up-to-date"
   fi
 fi
+
+# --------------------------
+# Publish all packages
+# --------------------------
+for pkg in "${!TO_PUBLISH[@]}"; do
+    ver="${TO_PUBLISH[$pkg]}"
+    ./publish.sh "$pkg" "$ver" "$DRY_RUN"
+done
 
 
 echo ""
