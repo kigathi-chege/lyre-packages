@@ -12,7 +12,8 @@
     "lyre/file": "*",
     "lyre/guest": "*",
     "lyre/school": "*",
-    "lyre/settings": "*"
+    "lyre/settings": "*",
+    "content": "2.8.5"
   },
   "minimum-stability": "dev",
   "prefer-stable": true,
