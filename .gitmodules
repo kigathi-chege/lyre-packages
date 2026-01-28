@@ -1,0 +1,27 @@
+[submodule "packages/billing"]
+	path = packages/billing
+	url = https://github.com/kigathi-chege/lyre-billing.git
+[submodule "packages/commerce"]
+	path = packages/commerce
+	url = https://github.com/kigathi-chege/lyre-commerce.git
+[submodule "packages/content"]
+	path = packages/content
+	url = https://github.com/kigathi-chege/lyre-content.git
+[submodule "packages/facet"]
+	path = packages/facet
+	url = https://github.com/kigathi-chege/lyre-facet.git
+[submodule "packages/file"]
+	path = packages/file
+	url = https://github.com/kigathi-chege/lyre-file.git
+[submodule "packages/guest"]
+	path = packages/guest
+	url = https://github.com/kigathi-chege/lyre-guest.git
+[submodule "packages/school"]
+	path = packages/school
+	url = https://github.com/kigathi-chege/lyre-school.git
+[submodule "packages/lyre"]
+	path = packages/lyre
+	url = https://github.com/kigathi-chege/lyre.git
+[submodule "packages/settings"]
+	path = packages/settings
+	url = https://github.com/kigathi-chege/lyre-settings.git
