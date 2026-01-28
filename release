@@ -125,6 +125,11 @@ command -v jq >/dev/null || {
   exit 1
 }
 
+log() {
+  printf "🔍 [%s] %s\n" "$(date '+%H:%M:%S')" "$*" >&2
+}
+
+
 #############################################
 # Repo root
 #############################################
@@ -166,6 +171,7 @@ discover_since_packages() {
   git diff --name-only "$ref"...HEAD | grep '^packages/' | awk -F/ '{print $2}' | sort -u
 }
 
+log "ARGS before keyword expansion: (${#ARGS[@]}) ${ARGS[*]}"
 if [[ "${ARGS[0]:-}" == "all" ]]; then
   mapfile -t ARGS < <(discover_all_packages)
 elif [[ "${ARGS[0]:-}" == "changed" ]]; then
@@ -174,6 +180,11 @@ elif [[ "${ARGS[0]:-}" == "since" ]]; then
   [[ -z "${ARGS[1]:-}" ]] && { echo "❌ since requires a git ref"; exit 1; }
   mapfile -t ARGS < <(discover_since_packages "${ARGS[1]}")
 fi
+
+log "ARGS after keyword expansion: (${#ARGS[@]})"
+for a in "${ARGS[@]}"; do
+  log "  ARG: [$a]"
+done
 
 AUTO_REQUESTED=false
 [[ "${ARGS[0]:-}" == "auto" ]] && AUTO_REQUESTED=true
@@ -189,6 +200,12 @@ if $AUTO_REQUESTED; then
 else
   AUTO_MODE=false
 fi
+
+log "RAW ARGS COUNT: $#"
+log "PARSED ARGS (${#ARGS[@]}):"
+for a in "${ARGS[@]}"; do
+  log "  ARG: [$a]"
+done
 
 #############################################
 # Version utilities
@@ -222,21 +239,38 @@ is_version() {
 
 #############################################
 # Parse specs
-#############################################
+# Fully bulletproof parser
+# Rules:
+# - Packages are unquoted
+# - Versions are optional semantic versions (x.y.z)
+# - Commit messages must be quoted if they contain spaces/colons
+# - Key-value style: pkg:version=1.2.3,message="feat: ..."
+
 parse_specs() {
   local specs=("$@")
   local i=0
+  local n=${#specs[@]}
 
-  while [[ $i -lt ${#specs[@]} ]]; do
+  log "parse_specs called with $n tokens"
+  for s in "${specs[@]}"; do
+    log "  SPEC TOKEN: [$s]"
+  done
+
+  while [[ $i -lt $n ]]; do
     local token="${specs[$i]}"
+    local PKG=""
+    local VERSION=""
+    local MESSAGE=""
 
-    if [[ "$token" == *:* ]]; then
+    log "parse_specs loop i=$i token=[$token]"
+
+    if [[ "$token" == *":"* && "$token" == *"="* ]]; then
       PKG="${token%%:*}"
-      VERSION=""
-      MESSAGE=""
+      log "Detected key-value spec for package [$PKG]"
 
       IFS=',' read -ra KV <<< "${token#*:}"
       for pair in "${KV[@]}"; do
+        log "  KV pair: [$pair]"
         case "$pair" in
           version=*) VERSION="${pair#version=}" ;;
           v=*)       VERSION="${pair#v=}" ;;
@@ -244,54 +278,63 @@ parse_specs() {
           m=*)       MESSAGE="${pair#m=}" ;;
         esac
       done
-
-      echo "$PKG|$VERSION|$MESSAGE"
-      ((i++))
+      ((++i))
     else
       PKG="$token"
-      VERSION="${specs[$((i+1))]:-}"
-      MESSAGE="${specs[$((i+2))]:-}"
+      ((++i))
+      log "Detected package [$PKG]"
 
-      if [[ -n "$VERSION" ]] && ! is_version "$VERSION"; then
-        VERSION=""
+      if [[ $i -lt $n ]] && is_version "${specs[$i]}"; then
+        VERSION="${specs[$i]}"
+        log "Detected version [$VERSION]"
+        ((++i))
       fi
 
-      [[ "$MESSAGE" == *:* || "$MESSAGE" == -* ]] && MESSAGE=""
-
-      echo "$PKG|$VERSION|$MESSAGE"
-      ((i+=1))
-      [[ -n "$VERSION" ]] && ((i+=1))
-      [[ -n "$MESSAGE" ]] && ((i+=1))
+      if [[ $i -lt $n ]]; then
+        local next="${specs[$i]}"
+        log "Inspecting possible message token [$next]"
+        if [[ ! "$next" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+          MESSAGE="$next"
+          log "Detected commit message [$MESSAGE]"
+          ((++i))
+        fi
+      fi
     fi
+
+    log "EMIT TASK: PKG=[$PKG] VERSION=[$VERSION] MESSAGE=[$MESSAGE]"
+    echo "$PKG|$VERSION|$MESSAGE"
   done
 }
+
 
 #############################################
 # Execute releases
 #############################################
 mapfile -t TASKS < <(parse_specs "${ARGS[@]}")
 
+log "TASKS COUNT: ${#TASKS[@]}"
+for t in "${TASKS[@]}"; do
+  log "TASK: [$t]"
+done
+
+
 [[ ${#TASKS[@]} -eq 0 ]] && {
   echo "ℹ️  Nothing to release"
   exit 0
 }
-
-# Validate all packages
-for task in "${TASKS[@]}"; do
-  PKG="${task%%|*}"
-  [[ -d "packages/$PKG" ]] || { echo "❌ Unknown package: $PKG"; exit 1; }
-done
 
 UPDATED_SUBMODULES=()
 
 for task in "${TASKS[@]}"; do
   IFS='|' read -r PKG VERSION MESSAGE <<< "$task"
   PKG_PATH="packages/$PKG"
-  # [[ ! -d "$PKG_PATH/.git" ]] && { echo "❌ $PKG is not a submodule"; exit 1; }
+
   if [[ ! -d "$PKG_PATH/.git" && ! -f "$PKG_PATH/.git" ]]; then
     echo "❌ $PKG is not a submodule"
     exit 1
   fi
+
+  # Initialize submodule if needed
   git submodule update --init "$PKG_PATH"
 
   echo ""
@@ -301,63 +344,85 @@ for task in "${TASKS[@]}"; do
   echo "  Message : ${MESSAGE:-<auto>}"
   echo "========================================"
 
+  log "Processing package [$PKG]"
+  log "PKG_PATH exists: $(ls -d "$PKG_PATH" 2>/dev/null || echo NO)"
   pushd "$PKG_PATH" >/dev/null
 
-  DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
-  [[ -z "$DEFAULT_BRANCH" ]] && DEFAULT_BRANCH=main
-
-  run git checkout "$DEFAULT_BRANCH"
-
   CURRENT_BRANCH=$(git branch --show-current)
-  [[ "$CURRENT_BRANCH" != "$DEFAULT_BRANCH" ]] && { echo "❌ Not on default branch"; exit 1; }
+  
+  [[ "$CURRENT_BRANCH" != "$MONOREPO_DEFAULT_BRANCH" ]] && {
+    echo "❌ Not on default branch ($MONOREPO_DEFAULT_BRANCH)"
+    exit 1
+  }
 
-  git status --porcelain | grep -q . && { echo "❌ Working tree not clean in $PKG"; exit 1; }
+  # Detect changes inside submodule properly
+  CHANGED_FILES="$(git status --porcelain)"
+  log "CHANGED_FILES raw:"
+  printf '%s\n' "$CHANGED_FILES" | sed 's/^/  > /'
 
-  if $AUTO_MODE; then
-    if git log "$(latest_tag)"..HEAD --oneline | grep -q .; then
-      BASE=$(latest_tag)
-      TYPE=$(detect_bump)
-      VERSION=$(bump_version "$BASE" "$TYPE")
-    else
-      VERSION=""
-      echo "ℹ️  Auto mode: no changes detected for $PKG → skipping release"
-      continue
-    fi
-  fi
+  if [[ -n "$CHANGED_FILES" ]]; then
+      echo "ℹ️  Changes detected in $PKG"
+      log "Entered submodule [$PKG]"
+      log "Current branch: $(git branch --show-current)"
+      log "Git status porcelain:"
 
-  if [[ -n "$VERSION" && -f composer.json ]]; then
-    TMP_JSON="$(mktemp)"
-    trap 'rm -f "$TMP_JSON"' EXIT
-    run jq --arg v "$VERSION" '.version = $v' composer.json > "$TMP_JSON"
-    run mv "$TMP_JSON" composer.json
-    trap - EXIT
-    run git add composer.json
-  fi
+      # Stage everything
+      run git add .
 
-  run git add .
+      # --------------------------
+      # Auto bump version if not provided
+      # --------------------------
+      if [[ -z "$VERSION" ]]; then
+          CURRENT_VERSION="$(latest_tag)"
+          BUMP_TYPE="$(detect_bump)"
+          VERSION="$(bump_version "$CURRENT_VERSION" "$BUMP_TYPE")"
 
-  if ! git diff --cached --quiet; then
-    COMMIT_MSG="${MESSAGE:-"chore($PKG): release $VERSION"}"
-    run git commit -m "$(printf '%q' "$COMMIT_MSG")"
-    run git push origin "$DEFAULT_BRANCH" || {
-        echo "❌ Failed to push $PKG to $DEFAULT_BRANCH"
-        exit 1
-    }
+          log "Auto version bump:"
+          log "  Current: $CURRENT_VERSION"
+          log "  Bump:    $BUMP_TYPE"
+          log "  Next:    $VERSION"
+      fi
+
+      # Update composer.json version only if it differs
+      if [[ -n "$VERSION" && -f composer.json ]]; then
+          CURRENT_JSON_VERSION="$(jq -r '.version // empty' composer.json)"
+
+          if [[ "$CURRENT_JSON_VERSION" != "$VERSION" ]]; then
+              log "Updating composer.json version: $CURRENT_JSON_VERSION → $VERSION"
+
+              TMP_JSON="$(mktemp)"
+              trap 'rm -f "$TMP_JSON"' EXIT
+              run jq --arg v "$VERSION" '.version = $v' composer.json > "$TMP_JSON"
+              run mv "$TMP_JSON" composer.json
+              trap - EXIT
+
+              run git add composer.json
+          else
+              log "composer.json version already $VERSION — no update needed"
+          fi
+      fi
+
+
+      COMMIT_MSG="${MESSAGE:-"chore($PKG): release $VERSION"}"
+      run git commit -m "$COMMIT_MSG"
+      run git push origin "$CURRENT_BRANCH"
   else
-    echo "ℹ️  No changes to commit"
+      echo "ℹ️  No changes to commit for $PKG"
   fi
 
   popd >/dev/null
 
+  # Publish if version specified
   if [[ -n "$VERSION" ]]; then
-    # Pass DRY_RUN to publish.sh
     ./publish.sh "$PKG" "$VERSION" "$DRY_RUN"
   fi
 
   UPDATED_SUBMODULES+=("$PKG")
 done
 
+# --------------------------
 # Commit updated submodule pointers
+# --------------------------
 if [[ ${#UPDATED_SUBMODULES[@]} -gt 0 ]]; then
   echo ""
   echo "📦 Updating submodule pointers in monorepo root..."
