@@ -286,11 +286,7 @@ for task in "${TASKS[@]}"; do
 
   if [[ -n "$VERSION" ]]; then
     # Pass DRY_RUN to submodule-publish.sh
-    if $DRY_RUN; then
-      echo "🟡 DRY-RUN: ./submodule-publish.sh $PKG $VERSION"
-    else
-      ./submodule-publish.sh "$PKG" "$VERSION"
-    fi
+    ./submodule-publish.sh "$PKG" "$VERSION" "$DRY_RUN"
   fi
 
   UPDATED_SUBMODULES+=("$PKG")
