@@ -437,20 +437,31 @@ if [[ ${#UPDATED_SUBMODULES[@]} -gt 0 ]]; then
     SUBMODULE_VERSIONS["$pkg"]="$(git -C "packages/$pkg" describe --tags --abbrev=0 2>/dev/null || echo "unknown")"
   done
 
-  # Update root metadata with new versions
-  if [[ -f "$METADATA_FILE" ]]; then
-    for pkg in "${UPDATED_SUBMODULES[@]}"; do
-      ver="${SUBMODULE_VERSIONS[$pkg]}"
-      if [[ "$ver" != "unknown" ]]; then
-        if is_dry_run; then
-          echo "🟡 DRY-RUN: Update $pkg version in $METADATA_FILE to $ver"
-        else
-          jq --arg pkg "$pkg" --arg ver "$ver" \
-            '.require[$pkg] = $ver' "$METADATA_FILE" > tmp.$$.json && mv tmp.$$.json "$METADATA_FILE"
-          git add "$METADATA_FILE"
-        fi
-      fi
-    done
+  # --------------------------
+  # Bump root metapackage version ONLY
+  # --------------------------
+  if [[ ${#UPDATED_SUBMODULES[@]} -gt 0 && -f "$METADATA_FILE" ]]; then
+    echo "📦 Bumping root metapackage version..."
+
+    CURRENT_META_VERSION="$(jq -r '.version // empty' "$METADATA_FILE")"
+    [[ -z "$CURRENT_META_VERSION" ]] && CURRENT_META_VERSION="0.0.0"
+
+    META_BUMP_TYPE="$(detect_bump)"
+    NEXT_META_VERSION="$(bump_version "$CURRENT_META_VERSION" "$META_BUMP_TYPE")"
+
+    log "Root version bump:"
+    log "  Current: $CURRENT_META_VERSION"
+    log "  Bump:    $META_BUMP_TYPE"
+    log "  Next:    $NEXT_META_VERSION"
+
+    if is_dry_run; then
+      echo "🟡 DRY-RUN: Update root composer.json version → $NEXT_META_VERSION"
+    else
+      TMP_JSON="$(mktemp)"
+      jq --arg v "$NEXT_META_VERSION" '.version = $v' "$METADATA_FILE" > "$TMP_JSON"
+      mv "$TMP_JSON" "$METADATA_FILE"
+      git add "$METADATA_FILE"
+    fi
   fi
 
   # Construct descriptive commit message
