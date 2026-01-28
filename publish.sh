@@ -69,7 +69,7 @@ if git show-ref --verify --quiet "refs/heads/$DEFAULT_BRANCH"; then
     run git checkout "$DEFAULT_BRANCH"
 else
     # Create local branch tracking remote if it doesn't exist
-    run git checkout -b "$DEFAULT_BRANCH" "origin/$DEFAULT_BRANCH"
+    run git checkout -b "$DEFAULT_BRANCH" "$DEFAULT_BRANCH"
 fi
 
 
