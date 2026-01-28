@@ -26,8 +26,8 @@ lyre/
 │   ├── guest/         # lyre-guest (submodule)
 │   ├── school/        # lyre-school (submodule)
 │   └── settings/      # lyre-settings (submodule)
+├── release.sh         # Release monorepo
 ├── publish.sh         # Publish package → individual repo
-├── import.sh          # Import package → monorepo
 └── .gitmodules
 ```
 
@@ -40,7 +40,7 @@ Each directory inside `packages/` is **its own Git repository**, linked as a sub
 ### Option 1: One-step clone (recommended)
 
 ```bash
-git clone --recurse-submodules https://github.com/kigathi-chege/lyre.git
+git clone --recurse-submodules https://github.com/kigathi-chege/lyre-packages.git
 ```
 
 This will:
@@ -53,8 +53,8 @@ This will:
 ### Option 2: Clone + init manually
 
 ```bash
-git clone https://github.com/kigathi-chege/lyre.git
-cd lyre
+git clone https://github.com/kigathi-chege/lyre-packages.git
+cd lyre-packages
 git submodule update --init --recursive
 ```
 
