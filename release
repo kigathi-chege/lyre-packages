@@ -421,25 +421,54 @@ for task in "${TASKS[@]}"; do
 done
 
 # --------------------------
-# Commit updated submodule pointers
+# Commit updated submodule pointers and bump root metadata
 # --------------------------
+METADATA_FILE="composer.json"  # root-level metadata
+
 if [[ ${#UPDATED_SUBMODULES[@]} -gt 0 ]]; then
   echo ""
-  echo "📦 Updating submodule pointers in monorepo root..."
+  echo "📦 Updating submodule pointers and root metadata..."
 
+  declare -A SUBMODULE_VERSIONS
+
+  # Stage updated submodules and collect their versions
   for pkg in "${UPDATED_SUBMODULES[@]}"; do
     run git add "packages/$pkg"
+    SUBMODULE_VERSIONS["$pkg"]="$(git -C "packages/$pkg" describe --tags --abbrev=0 2>/dev/null || echo "unknown")"
   done
 
+  # Update root metadata with new versions
+  if [[ -f "$METADATA_FILE" ]]; then
+    for pkg in "${UPDATED_SUBMODULES[@]}"; do
+      ver="${SUBMODULE_VERSIONS[$pkg]}"
+      if [[ "$ver" != "unknown" ]]; then
+        if is_dry_run; then
+          echo "🟡 DRY-RUN: Update $pkg version in $METADATA_FILE to $ver"
+        else
+          jq --arg pkg "$pkg" --arg ver "$ver" \
+            '.require[$pkg] = $ver' "$METADATA_FILE" > tmp.$$.json && mv tmp.$$.json "$METADATA_FILE"
+          git add "$METADATA_FILE"
+        fi
+      fi
+    done
+  fi
+
+  # Construct descriptive commit message
+  COMMIT_MSG="chore(release): update submodule pointers"
+  for pkg in "${UPDATED_SUBMODULES[@]}"; do
+    COMMIT_MSG+=" | $pkg@${SUBMODULE_VERSIONS[$pkg]}"
+  done
+
+  # Commit everything if there are staged changes
   if ! git diff --cached --quiet; then
-    COMMIT_MSG="chore: update submodule pointers for release"
     run git commit -m "$COMMIT_MSG"
     ROOT_BRANCH=$(git symbolic-ref --quiet --short HEAD || echo "$MONOREPO_DEFAULT_BRANCH")
     run git push origin "$ROOT_BRANCH"
   else
-    echo "ℹ️  Monorepo pointers already up-to-date"
+    echo "ℹ️  Monorepo pointers and root metadata already up-to-date"
   fi
 fi
+
 
 echo ""
 if is_dry_run; then
