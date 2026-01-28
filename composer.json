@@ -2,7 +2,7 @@
   "name": "lyre/monorepo",
   "description": "Meta package for Lyre monorepo",
   "type": "metapackage",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "require": {
     "lyre/lyre": "*",
     "lyre/content": "*",
