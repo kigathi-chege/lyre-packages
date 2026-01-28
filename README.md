@@ -6,7 +6,9 @@ It contains:
 
 - A top-level monorepo
 - Individual Lyre packages mounted as **git submodules** under `packages/`
-- Tooling scripts (`publish.sh`, `import.sh`) to manage publishing and synchronization
+- Tooling scripts (publish.sh, release) to manage package publishing and monorepo releases.
+  - publish.sh handles publishing an individual package to its own repository.
+  - `release` is a multi-package release CLI that automates version bumps, detects changed packages, updates submodule pointers, and optionally performs dry-run previews. You’ll find a full guide to release usage below in [Multi-Package Release CLI](#multi-package-release-cli)
 
 This document explains **how to clone**, **initialize**, and **use** the repo correctly.
 
@@ -26,7 +28,7 @@ lyre/
 │   ├── guest/         # lyre-guest (submodule)
 │   ├── school/        # lyre-school (submodule)
 │   └── settings/      # lyre-settings (submodule)
-├── release.sh         # Release monorepo
+├── release            # Release monorepo
 ├── publish.sh         # Publish package → individual repo
 └── .gitmodules
 ```
@@ -165,15 +167,24 @@ Result:
 - `git`
 - `jq` (for updating `composer.json`)
 
-Ensure that `submodule-publish.sh` is executable:
+Ensure that `publish.sh` is executable:
 
 ```bash
-chmod +x submodule-publish.sh
+chmod +x publish.sh
 ```
 
-````
+## Installing / Adding to PATH
 
----
+If you want to run release from anywhere on your system without specifying the full path:
+
+Move the script to a directory in your PATH:
+
+```bash
+sudo mv release /usr/local/bin/
+sudo chmod +x /usr/local/bin/release
+```
+
+Now release can be run from any directory, not just inside the monorepo.
 
 ## Usage
 
@@ -343,3 +354,4 @@ This setup gives you:
 ---
 
 Happy hacking 🚀
+````
