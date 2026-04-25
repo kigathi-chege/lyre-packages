@@ -2,6 +2,13 @@
 
 This repository is the **Lyre monorepo**, which acts as the canonical development hub for the Lyre ecosystem.
 
+## Contributor Guidance
+
+- Operational contributor/AI rules: `AGENTS.md`
+- Architecture map: `docs/architecture.md`
+- Package boundaries: `docs/package-responsibilities.md`
+- Package matrix: `docs/packages.md`
+
 It contains:
 
 - A top-level monorepo
